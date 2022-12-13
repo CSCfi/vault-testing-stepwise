@@ -18,6 +18,7 @@ import (
 )
 
 const pluginPrefix = "vault-plugin-"
+const golangImage = "golang:1.19-alpine" // Must be Alpine linux for compatibility with the vault image
 
 // CompilePlugin is a helper method to compile a source plugin
 func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, string, error) {
@@ -27,7 +28,7 @@ func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, str
 	}
 	binPath := path.Join(tmpDir, binName)
 
-	cmd := exec.Command("go", "build", "-o", binPath, path.Join(srcDir, fmt.Sprintf("cmd/%s/main.go", pluginName)))
+	cmd := exec.Command("docker", "run", "--rm", "-v", fmt.Sprintf("%s:%s", tmpDir, tmpDir), "-v", fmt.Sprintf("%s/..:/usr/src/myapp", srcDir), "-w", "/usr/src/myapp", golangImage, "go", "build", "-v", "-o", binPath, path.Join("/usr/src/myapp", pluginName, fmt.Sprintf("cmd/%s/main.go", pluginName)))
 	cmd.Stdout = &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
 	cmd.Stderr = errOut
