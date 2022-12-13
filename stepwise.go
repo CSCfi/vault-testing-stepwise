@@ -125,6 +125,10 @@ type MountOptions struct {
 
 // Step represents a single step of a test Case
 type Step struct {
+
+	// Name of the step to be printed in the report
+	Name string
+
 	// Operation defines what action is being taken in this step; write, read,
 	// delete, et. al.
 	Operation Operation
@@ -264,7 +268,7 @@ func Run(tt TestT, c Case) {
 		if logger.IsWarn() {
 			// range is zero based, so add 1 for a human friendly output of steps.
 			progress := fmt.Sprintf("%d/%d", i+1, stepCount)
-			logger.Warn("Executing test step", "step_number", progress)
+			logger.Info("Executing test step", "step_number", progress, "name", step.Name)
 		}
 
 		// reset token in case it was cleared
