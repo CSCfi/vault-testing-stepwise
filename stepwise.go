@@ -141,6 +141,9 @@ type Step struct {
 	// to the API.
 	Data map[string]interface{}
 
+	// Alternatively get data from a function
+	GetData func() (map[string]interface{}, error)
+
 	// Assert is a function that is called after this step is executed in order to
 	// test that the step executed successfully. If this is not set, then the next
 	// step will be called
@@ -311,9 +314,18 @@ func makeRequest(tt TestT, env Environment, step Step) (*api.Secret, error) {
 	}
 
 	path := fmt.Sprintf("%s/%s", env.MountPath(), step.Path)
+
+	// Step.GetData supersedes Step.Data
+	data := step.Data
+	if step.GetData != nil {
+		data, err = step.GetData()
+		if err != nil {
+			return nil, err
+		}
+	}
 	switch step.Operation {
 	case WriteOperation, UpdateOperation:
-		return client.Logical().Write(path, step.Data)
+		return client.Logical().Write(path, data)
 	case ReadOperation:
 		return client.Logical().Read(path)
 	case ListOperation:
