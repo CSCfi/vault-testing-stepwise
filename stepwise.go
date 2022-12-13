@@ -26,11 +26,11 @@ type Operation string
 
 const (
 	WriteOperation  Operation = "create"
-	UpdateOperation           = "update"
-	ReadOperation             = "read"
-	DeleteOperation           = "delete"
-	ListOperation             = "list"
-	HelpOperation             = "help"
+	UpdateOperation Operation = "update"
+	ReadOperation   Operation = "read"
+	DeleteOperation Operation = "delete"
+	ListOperation   Operation = "list"
+	HelpOperation   Operation = "help"
 )
 
 // Environment is the interface Environments need to implement to be used in
@@ -62,7 +62,7 @@ type Environment interface {
 }
 
 // PluginType defines the types of plugins supported
-// This type re-create constants as a convienence so users don't need to import/use
+// This type re-create constants as a convenience so users don't need to import/use
 // the consts package.
 type PluginType consts.PluginType
 
@@ -273,7 +273,6 @@ func Run(tt TestT, c Case) {
 			tt.Fatal(err)
 		}
 
-		// TODO: support creating tokens with policies listed in each Step
 		client.SetToken(rootToken)
 
 		resp, respErr := makeRequest(tt, c.Environment, step)
@@ -312,7 +311,6 @@ func makeRequest(tt TestT, env Environment, step Step) (*api.Secret, error) {
 	case WriteOperation, UpdateOperation:
 		return client.Logical().Write(path, step.Data)
 	case ReadOperation:
-		// TODO support ReadWithData
 		return client.Logical().Read(path)
 	case ListOperation:
 		return client.Logical().List(path)

@@ -15,14 +15,11 @@ import (
 	"path"
 	"strings"
 	"sync"
-
-	"github.com/hashicorp/errwrap"
 )
 
 const pluginPrefix = "vault-plugin-"
 
 // CompilePlugin is a helper method to compile a source plugin
-// TODO refactor compile plugin input and output to be types
 func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, string, error) {
 	binName := name
 	if !strings.HasPrefix(binName, pluginPrefix) {
@@ -101,10 +98,10 @@ func (cg *CertificateGetter) Reload() error {
 		return errors.New("decoded PEM is blank")
 	}
 
-	if x509.IsEncryptedPEMBlock(keyBlock) {
-		keyBlock.Bytes, err = x509.DecryptPEMBlock(keyBlock, []byte(cg.passphrase))
+	if x509.IsEncryptedPEMBlock(keyBlock) { //nolint:staticcheck
+		keyBlock.Bytes, err = x509.DecryptPEMBlock(keyBlock, []byte(cg.passphrase)) //nolint:staticcheck
 		if err != nil {
-			return errwrap.Wrapf("Decrypting PEM block failed {{err}}", err)
+			return fmt.Errorf("decrypting PEM block failed %s", err)
 		}
 		keyPEMBlock = pem.EncodeToMemory(keyBlock)
 	}

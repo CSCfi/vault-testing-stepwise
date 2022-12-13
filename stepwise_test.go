@@ -16,9 +16,6 @@ import (
 	"github.com/hashicorp/vault/sdk/helper/jsonutil"
 )
 
-// testTesting is used for testing the legacy testing framework
-var testTesting = false
-
 type testRun struct {
 	expectedTestT *mockT
 	environment   *mockEnvironment
@@ -177,7 +174,10 @@ type requestCounts struct {
 
 func TestStepwise_makeRequest(t *testing.T) {
 	me := new(mockEnvironment)
-	me.Setup()
+	err := me.Setup()
+	if err != nil {
+		t.Error(err)
+	}
 	testT := new(mockT)
 
 	type testRequest struct {
@@ -337,7 +337,10 @@ func respondCommon(id string, excludeLease bool, w http.ResponseWriter, req *htt
 	if err != nil {
 		panic(err)
 	}
-	w.Write(out)
+	_, err = w.Write(out)
+	if err != nil {
+		panic(err)
+	}
 }
 
 // Client creates a Vault API client configured to the mock environment's test
