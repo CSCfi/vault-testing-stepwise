@@ -15,14 +15,12 @@ import (
 	"path"
 	"strings"
 	"sync"
-
-	"github.com/hashicorp/errwrap"
 )
 
 const pluginPrefix = "vault-plugin-"
+const golangImage = "golang:1.19-alpine" // Must be Alpine linux for compatibility with the vault image
 
 // CompilePlugin is a helper method to compile a source plugin
-// TODO refactor compile plugin input and output to be types
 func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, string, error) {
 	binName := name
 	if !strings.HasPrefix(binName, pluginPrefix) {
@@ -30,7 +28,7 @@ func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, str
 	}
 	binPath := path.Join(tmpDir, binName)
 
-	cmd := exec.Command("go", "build", "-o", binPath, path.Join(srcDir, fmt.Sprintf("cmd/%s/main.go", pluginName)))
+	cmd := exec.Command("docker", "run", "--rm", "-v", fmt.Sprintf("%s:%s", tmpDir, tmpDir), "-v", fmt.Sprintf("%s/..:/usr/src/myapp", srcDir), "-w", "/usr/src/myapp", golangImage, "go", "build", "-v", "-o", binPath, path.Join("/usr/src/myapp", pluginName, fmt.Sprintf("cmd/%s/main.go", pluginName)))
 	cmd.Stdout = &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
 	cmd.Stderr = errOut
@@ -101,10 +99,10 @@ func (cg *CertificateGetter) Reload() error {
 		return errors.New("decoded PEM is blank")
 	}
 
-	if x509.IsEncryptedPEMBlock(keyBlock) {
-		keyBlock.Bytes, err = x509.DecryptPEMBlock(keyBlock, []byte(cg.passphrase))
+	if x509.IsEncryptedPEMBlock(keyBlock) { //nolint:staticcheck
+		keyBlock.Bytes, err = x509.DecryptPEMBlock(keyBlock, []byte(cg.passphrase)) //nolint:staticcheck
 		if err != nil {
-			return errwrap.Wrapf("Decrypting PEM block failed {{err}}", err)
+			return fmt.Errorf("decrypting PEM block failed %s", err)
 		}
 		keyPEMBlock = pem.EncodeToMemory(keyBlock)
 	}

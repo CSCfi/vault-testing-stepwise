@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	stepwise "github.com/CSCfi/vault-testing-stepwise"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
@@ -32,19 +33,19 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/hashicorp/go-cleanhttp"
 	"github.com/hashicorp/go-multierror"
-	uuid "github.com/hashicorp/go-uuid"
-	stepwise "github.com/hashicorp/vault-testing-stepwise"
+	"github.com/hashicorp/go-uuid"
 	"github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/helper/consts"
 	"golang.org/x/net/http2"
 )
 
-var _ stepwise.Environment = (*DockerCluster)(nil)
+var _ stepwise.Environment = (*Cluster)(nil)
 
-const dockerVersion = "1.40"
+const dockerVersion = "1.41"
+const vaultImage = "vault:1.12.2"
 
-// DockerCluster is used to managing the lifecycle of the test Vault cluster
-type DockerCluster struct {
+// Cluster is used for managing the lifecycle of the test Vault cluster
+type Cluster struct {
 	ID string
 	// PluginName is the input from the test case
 	PluginName string
@@ -74,7 +75,7 @@ type DockerCluster struct {
 	tmpDir       string
 
 	clientAuthRequired bool
-	// the mountpath of the plugin under test
+	// mountPath of the plugin under test
 	mountPath string
 	// rootToken is the initial root token created when the Vault cluster is
 	// created.
@@ -82,7 +83,7 @@ type DockerCluster struct {
 }
 
 // Teardown stops all the containers.
-func (dc *DockerCluster) Teardown() error {
+func (dc *Cluster) Teardown() error {
 	var result *multierror.Error
 	for _, node := range dc.ClusterNodes {
 		if err := node.Cleanup(); err != nil {
@@ -105,9 +106,9 @@ func (dc *DockerCluster) Teardown() error {
 }
 
 // MountPath returns the path that the plugin under test is mounted at. If a
-// MountPathPrefix was given, the mount path uses the prefix with a uuid
-// appended. The default is the given PluginName with a uuid suffix.
-func (dc *DockerCluster) MountPath() string {
+// MountPathPrefix was given, the mount path uses the prefix with a UUID
+// appended. The default is the given PluginName with a UUID suffix.
+func (dc *Cluster) MountPath() string {
 	if dc.mountPath != "" {
 		return dc.mountPath
 	}
@@ -131,17 +132,17 @@ func (dc *DockerCluster) MountPath() string {
 }
 
 // RootToken returns the root token of the cluster, if set
-func (dc *DockerCluster) RootToken() string {
+func (dc *Cluster) RootToken() string {
 	return dc.rootToken
 }
 
 // Name returns the name of this environment
-func (dc *DockerCluster) Name() string {
+func (dc *Cluster) Name() string {
 	return "docker"
 }
 
 // Client returns a clone of the configured Vault API client.
-func (dc *DockerCluster) Client() (*api.Client, error) {
+func (dc *Cluster) Client() (*api.Client, error) {
 	if len(dc.ClusterNodes) > 0 {
 		if dc.ClusterNodes[0].Client != nil {
 			c, err := dc.ClusterNodes[0].Client.Clone()
@@ -160,7 +161,7 @@ func (n *dockerClusterNode) Name() string {
 	return n.Cluster.ClusterName + "-" + n.NodeID
 }
 
-func (dc *DockerCluster) Initialize(ctx context.Context) error {
+func (dc *Cluster) Initialize(ctx context.Context) error {
 	client, err := dc.ClusterNodes[0].NewAPIClient()
 	if err != nil {
 		return err
@@ -259,7 +260,7 @@ func (dc *DockerCluster) Initialize(ctx context.Context) error {
 			return err
 		}
 
-		if i == 0 {
+		if dc.RaftStorage && i == 0 {
 			err = ensureLeaderMatches(ctx, node.Client, func(leader *api.LeaderResponse) error {
 				if !leader.IsSelf {
 					return fmt.Errorf("node %d leader=%v, expected=%v", i, leader.IsSelf, true)
@@ -272,25 +273,25 @@ func (dc *DockerCluster) Initialize(ctx context.Context) error {
 			}
 		}
 	}
-
-	for i, node := range dc.ClusterNodes {
-		expectLeader := i == 0
-		err = ensureLeaderMatches(ctx, node.Client, func(leader *api.LeaderResponse) error {
-			if expectLeader != leader.IsSelf {
-				return fmt.Errorf("node %d leader=%v, expected=%v", i, leader.IsSelf, expectLeader)
+	if dc.RaftStorage {
+		for i, node := range dc.ClusterNodes {
+			expectLeader := i == 0
+			err = ensureLeaderMatches(ctx, node.Client, func(leader *api.LeaderResponse) error {
+				if expectLeader != leader.IsSelf {
+					return fmt.Errorf("node %d leader=%v, expected=%v", i, leader.IsSelf, expectLeader)
+				}
+				return nil
+			})
+			if err != nil {
+				return err
 			}
-
-			return nil
-		})
-		if err != nil {
-			return err
 		}
 	}
 
 	return nil
 }
 
-func (dc *DockerCluster) setupCA(opts *DockerClusterOptions) error {
+func (dc *Cluster) setupCA(opts *ClusterOptions) error {
 	var err error
 
 	certIPs := []net.IP{
@@ -442,6 +443,7 @@ func (n *dockerClusterNode) setupCert() error {
 		ClientAuth:     tls.RequestClientCert,
 		NextProtos:     []string{"h2", "http/1.1"},
 		GetCertificate: certGetter.GetCertificate,
+		MinVersion:     tls.VersionTLS12,
 	}
 
 	if n.Cluster.clientAuthRequired {
@@ -452,8 +454,8 @@ func (n *dockerClusterNode) setupCert() error {
 	return nil
 }
 
-// NewEnvironment creats a new Stepwise Environment for executing tests
-func NewEnvironment(name string, options *stepwise.MountOptions) *DockerCluster {
+// NewEnvironment creates a new Stepwise Environment for executing tests
+func NewEnvironment(name string, options *stepwise.MountOptions) *Cluster {
 	if options == nil {
 		return nil
 	}
@@ -463,7 +465,7 @@ func NewEnvironment(name string, options *stepwise.MountOptions) *DockerCluster 
 		panic(err)
 	}
 
-	return &DockerCluster{
+	return &Cluster{
 		PluginName:   options.PluginName,
 		ClusterName:  fmt.Sprintf("test-%s-%s", name, clusterUUID),
 		RaftStorage:  true,
@@ -486,7 +488,7 @@ type dockerClusterNode struct {
 	ServerKeyPEMFile  string
 	TLSConfig         *tls.Config
 	WorkDir           string
-	Cluster           *DockerCluster
+	Cluster           *Cluster
 	container         *types.ContainerJSON
 	dockerAPI         *docker.Client
 }
@@ -551,22 +553,20 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 			"disable_hostname": true,
 		},
 		"storage": map[string]interface{}{
+			"inmem": map[string]interface{}{},
+		},
+		"cluster_name":     netName,
+		"log_level":        "TRACE",
+		"plugin_directory": "/vault/config",
+		"disable_mlock":    true,
+	}
+	if n.Cluster.RaftStorage {
+		vaultCfg["storage"] = map[string]interface{}{
 			"raft": map[string]interface{}{
 				"path":    "/vault/file",
 				"node_id": n.NodeID,
 			},
-		},
-		"cluster_name":         netName,
-		"log_level":            "TRACE",
-		"raw_storage_endpoint": true,
-		"plugin_directory":     "/vault/config",
-		// disable_mlock is required for working in the Docker environment with
-		// custom plugins
-		"disable_mlock": true,
-		// These are being provided by docker-entrypoint now, since we don't know
-		// the address before the container starts.
-		//"api_addr": fmt.Sprintf("https://%s:%d", n.Address.IP, n.Address.Port),
-		//"cluster_addr": fmt.Sprintf("https://%s:%d", n.Address.IP, n.Address.Port+1),
+		}
 	}
 	cfgJSON, err := json.Marshal(vaultCfg)
 	if err != nil {
@@ -590,9 +590,9 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 	r := &Runner{
 		dockerAPI: cli,
 		ContainerConfig: &container.Config{
-			Image: "vault",
+			Image: vaultImage,
 			Entrypoint: []string{"/bin/sh", "-c", "update-ca-certificates && " +
-				"exec /usr/local/bin/docker-entrypoint.sh vault server -log-level=trace -dev-plugin-dir=./vault/config -config /vault/config/local.json"},
+				"exec /usr/local/bin/docker-entrypoint.sh vault server -log-level=trace -dev-plugin-dir=/vault/config -config /vault/config/local.json"},
 			Env: []string{
 				"VAULT_CLUSTER_INTERFACE=eth0",
 				"VAULT_API_ADDR=https://127.0.0.1:8200",
@@ -617,7 +617,11 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 	}
 	ports := n.container.NetworkSettings.NetworkSettingsBase.Ports[nat.Port("8200/tcp")]
 	if len(ports) == 0 {
-		n.Cleanup()
+		err := n.Cleanup()
+		if err != nil {
+			return err
+		}
+
 		return fmt.Errorf("could not find port binding for 8200/tcp")
 	}
 	n.HostPort = ports[0].HostPort
@@ -625,8 +629,8 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 	return nil
 }
 
-// DockerClusterOptions has options for setting up the docker cluster
-type DockerClusterOptions struct {
+// ClusterOptions has options for setting up the docker cluster
+type ClusterOptions struct {
 	KeepStandbysSealed bool
 	RequireClientAuth  bool
 	SkipInit           bool
@@ -635,7 +639,7 @@ type DockerClusterOptions struct {
 	tmpDir             string
 	PluginTestBin      string
 	// SetupFunc is called after the cluster is started.
-	SetupFunc func(t testing.T, c *DockerCluster)
+	SetupFunc func(t testing.T, c *Cluster)
 	CAKey     *ecdsa.PrivateKey
 }
 
@@ -686,26 +690,25 @@ func ensureLeaderMatches(ctx context.Context, client *api.Client, ready func(res
 
 // end test helper methods
 
-// TODO: allow number of cores/servers to be configurable
 var DefaultNumCores = 1
 
 // creates a managed docker container running Vault
-func (cluster *DockerCluster) setupDockerCluster(opts *DockerClusterOptions) error {
+func (dc *Cluster) setupDockerCluster(opts *ClusterOptions) error {
 	if opts != nil && opts.tmpDir != "" {
 		if _, err := os.Stat(opts.tmpDir); os.IsNotExist(err) {
 			if err := os.MkdirAll(opts.tmpDir, 0o700); err != nil {
 				return err
 			}
 		}
-		cluster.tmpDir = opts.tmpDir
+		dc.tmpDir = opts.tmpDir
 	} else {
 		tempDir, err := ioutil.TempDir("", "vault-test-cluster-")
 		if err != nil {
 			return err
 		}
-		cluster.tmpDir = tempDir
+		dc.tmpDir = tempDir
 	}
-	caDir := filepath.Join(cluster.tmpDir, "ca")
+	caDir := filepath.Join(dc.tmpDir, "ca")
 	if err := os.MkdirAll(caDir, 0o755); err != nil {
 		return err
 	}
@@ -718,23 +721,23 @@ func (cluster *DockerCluster) setupDockerCluster(opts *DockerClusterOptions) err
 	}
 
 	if opts != nil && opts.RequireClientAuth {
-		cluster.clientAuthRequired = true
+		dc.clientAuthRequired = true
 	}
 
 	for i := 0; i < numCores; i++ {
 		nodeID := fmt.Sprintf("vault-%d", i)
 		node := &dockerClusterNode{
 			NodeID:  nodeID,
-			Cluster: cluster,
-			WorkDir: filepath.Join(cluster.tmpDir, nodeID),
+			Cluster: dc,
+			WorkDir: filepath.Join(dc.tmpDir, nodeID),
 		}
-		cluster.ClusterNodes = append(cluster.ClusterNodes, node)
+		dc.ClusterNodes = append(dc.ClusterNodes, node)
 		if err := os.MkdirAll(node.WorkDir, 0o700); err != nil {
 			return err
 		}
 	}
 
-	err := cluster.setupCA(opts)
+	err := dc.setupCA(opts)
 	if err != nil {
 		return err
 	}
@@ -753,9 +756,9 @@ func (cluster *DockerCluster) setupDockerCluster(opts *DockerClusterOptions) err
 	if err != nil {
 		return err
 	}
-	cluster.networkID = netID
+	dc.networkID = netID
 
-	for _, node := range cluster.ClusterNodes {
+	for _, node := range dc.ClusterNodes {
 		pluginBinPath := ""
 		if opts != nil {
 			pluginBinPath = opts.PluginTestBin
@@ -768,7 +771,7 @@ func (cluster *DockerCluster) setupDockerCluster(opts *DockerClusterOptions) err
 	}
 
 	if opts == nil || !opts.SkipInit {
-		if err := cluster.Initialize(context.Background()); err != nil {
+		if err := dc.Initialize(context.Background()); err != nil {
 			return err
 		}
 	}
@@ -804,7 +807,7 @@ func createNetwork(cli *docker.Client, netName string) (string, error) {
 }
 
 // Setup creates any temp directories needed and compiles the binary for copying to Docker
-func (dc *DockerCluster) Setup() error {
+func (dc *Cluster) Setup() error {
 	registryName := dc.MountOptions.RegistryName
 	pluginName := dc.MountOptions.PluginName
 
@@ -815,7 +818,7 @@ func (dc *DockerCluster) Setup() error {
 	}
 
 	// tmpDir gets cleaned up when the cluster is cleaned up
-	tmpDir, err := ioutil.TempDir("", "bin")
+	tmpDir, err := ioutil.TempDir("", "vault-bin-")
 	if err != nil {
 		return err
 	}
@@ -825,7 +828,7 @@ func (dc *DockerCluster) Setup() error {
 		return err
 	}
 
-	dOpts := &DockerClusterOptions{PluginTestBin: binPath}
+	dOpts := &ClusterOptions{PluginTestBin: binPath}
 	if err := dc.setupDockerCluster(dOpts); err != nil {
 		return err
 	}

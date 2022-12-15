@@ -26,11 +26,11 @@ type Operation string
 
 const (
 	WriteOperation  Operation = "create"
-	UpdateOperation           = "update"
-	ReadOperation             = "read"
-	DeleteOperation           = "delete"
-	ListOperation             = "list"
-	HelpOperation             = "help"
+	UpdateOperation Operation = "update"
+	ReadOperation   Operation = "read"
+	DeleteOperation Operation = "delete"
+	ListOperation   Operation = "list"
+	HelpOperation   Operation = "help"
 )
 
 // Environment is the interface Environments need to implement to be used in
@@ -62,7 +62,7 @@ type Environment interface {
 }
 
 // PluginType defines the types of plugins supported
-// This type re-create constants as a convienence so users don't need to import/use
+// This type re-create constants as a convenience so users don't need to import/use
 // the consts package.
 type PluginType consts.PluginType
 
@@ -125,6 +125,10 @@ type MountOptions struct {
 
 // Step represents a single step of a test Case
 type Step struct {
+
+	// Name of the step to be printed in the report
+	Name string
+
 	// Operation defines what action is being taken in this step; write, read,
 	// delete, et. al.
 	Operation Operation
@@ -136,6 +140,9 @@ type Step struct {
 	// Arguments to pass in the request. These arguments represent payloads sent
 	// to the API.
 	Data map[string]interface{}
+
+	// Alternatively get data from a function
+	GetData func() (map[string]interface{}, error)
 
 	// Assert is a function that is called after this step is executed in order to
 	// test that the step executed successfully. If this is not set, then the next
@@ -264,7 +271,7 @@ func Run(tt TestT, c Case) {
 		if logger.IsWarn() {
 			// range is zero based, so add 1 for a human friendly output of steps.
 			progress := fmt.Sprintf("%d/%d", i+1, stepCount)
-			logger.Warn("Executing test step", "step_number", progress)
+			logger.Info("Executing test step", "step_number", progress, "name", step.Name)
 		}
 
 		// reset token in case it was cleared
@@ -273,7 +280,6 @@ func Run(tt TestT, c Case) {
 			tt.Fatal(err)
 		}
 
-		// TODO: support creating tokens with policies listed in each Step
 		client.SetToken(rootToken)
 
 		resp, respErr := makeRequest(tt, c.Environment, step)
@@ -308,11 +314,19 @@ func makeRequest(tt TestT, env Environment, step Step) (*api.Secret, error) {
 	}
 
 	path := fmt.Sprintf("%s/%s", env.MountPath(), step.Path)
+
+	// Step.GetData supersedes Step.Data
+	data := step.Data
+	if step.GetData != nil {
+		data, err = step.GetData()
+		if err != nil {
+			return nil, err
+		}
+	}
 	switch step.Operation {
 	case WriteOperation, UpdateOperation:
-		return client.Logical().Write(path, step.Data)
+		return client.Logical().Write(path, data)
 	case ReadOperation:
-		// TODO support ReadWithData
 		return client.Logical().Read(path)
 	case ListOperation:
 		return client.Logical().List(path)
