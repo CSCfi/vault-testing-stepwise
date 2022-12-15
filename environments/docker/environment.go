@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	stepwise "github.com/CSCfi/vault-testing-stepwise"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
@@ -33,7 +34,6 @@ import (
 	"github.com/hashicorp/go-cleanhttp"
 	"github.com/hashicorp/go-multierror"
 	uuid "github.com/hashicorp/go-uuid"
-	stepwise "github.com/hashicorp/vault-testing-stepwise"
 	"github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/helper/consts"
 	"golang.org/x/net/http2"

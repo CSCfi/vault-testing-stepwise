@@ -1,4 +1,4 @@
-module github.com/hashicorp/vault-testing-stepwise
+module github.com/CSCfi/vault-testing-stepwise
 
 go 1.16
 
