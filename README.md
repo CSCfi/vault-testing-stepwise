@@ -46,6 +46,7 @@ func TestPlugin(t *testing.T) {
                 Name:      "testThatPathReturnsX",
                 Operation: stepwise.ReadOperation,
                 Path:      "/path/here",
+				// There's support for ReadOperation with data by passing ReadData 
                 Assert: func (resp *api.Secret, err error) error {
                 
                     // resp.Data contains the `data` part of the response from Vault
@@ -67,8 +68,8 @@ func TestPlugin(t *testing.T) {
 
 Set `SkipTeardown` to `true`, and go into the container with `docker exec -it container-id sh`. Find the container ID with `docker ps`.
 
-When leaving the container running, it's also possible to get the root token, and make API calls directly to Vault.
-For that, run execute `stepwise.Run` instead, create an environment, run it's `Setup()` function, and print the `env.RootToken()` to the command line.
+When leaving the container running, it's possible to get the root token, and make API calls directly to Vault.
+For that, don't execute `stepwise.Run` instead, create an environment, run it's `Setup()` function, and print the `env.RootToken()` to the command line.
 
 # Licensing
 
