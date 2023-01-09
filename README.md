@@ -75,4 +75,4 @@ For that, don't execute `stepwise.Run` instead, create an environment, run it's 
 
 `vault-testing-stepwise` is licensed under MPL-2.0.
 
-`SPDX-License-Identifier: MIT AND MPL-2.0`
+`SPDX-License-Identifier: MPL-2.0`
