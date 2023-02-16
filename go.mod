@@ -19,7 +19,7 @@ require (
 	github.com/armon/go-metrics v0.3.9 // indirect
 	github.com/armon/go-radix v1.0.0 // indirect
 	github.com/cenkalti/backoff/v3 v3.0.0 // indirect
-	github.com/containerd/containerd v1.5.16 // indirect
+	github.com/containerd/containerd v1.5.18 // indirect
 	github.com/docker/distribution v2.8.0+incompatible // indirect
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/fatih/color v1.13.0 // indirect
