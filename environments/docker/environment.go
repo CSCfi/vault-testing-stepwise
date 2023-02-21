@@ -35,7 +35,6 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/go-uuid"
 	"github.com/hashicorp/vault/api"
-	"github.com/hashicorp/vault/sdk/helper/consts"
 	"golang.org/x/net/http2"
 )
 
@@ -839,7 +838,7 @@ func (dc *Cluster) Setup() error {
 	// use client to mount plugin
 	err = client.Sys().RegisterPlugin(&api.RegisterPluginInput{
 		Name:    registryName,
-		Type:    consts.PluginType(dc.MountOptions.PluginType),
+		Type:    api.PluginType(dc.MountOptions.PluginType),
 		Command: binName,
 		SHA256:  sha256value,
 	})
