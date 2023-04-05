@@ -32,7 +32,7 @@ func TestPlugin(t *testing.T) {
 		PluginName:      "plugin-name",
 	}
 	keysCase := stepwise.Case{
-		Environment:  docker.NewEnvironment("DockerPluginEnvironment", &mountOptions),
+		Environment:  docker.NewEnvironment("DockerPluginEnvironment", &mountOptions, "hashicorp/vault:latest"),
 		SkipTeardown: false,
 		Steps: []stepwise.Step{
 			stepwise.Step{
@@ -70,6 +70,11 @@ Set `SkipTeardown` to `true`, and go into the container with `docker exec -it co
 
 When leaving the container running, it's possible to get the root token, and make API calls directly to Vault.
 For that, don't execute `stepwise.Run` instead, create an environment, run it's `Setup()` function, and print the `env.RootToken()` to the command line.
+
+# Tests
+Can be executed with
+
+	go test -v ./...
 
 # Licensing
 

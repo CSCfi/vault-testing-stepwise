@@ -41,7 +41,7 @@ import (
 var _ stepwise.Environment = (*Cluster)(nil)
 
 const dockerVersion = "1.41"
-const vaultImage = "vault:1.12.2"
+const defaultImage = "hashicorp/vault:latest"
 
 // Cluster is used for managing the lifecycle of the test Vault cluster
 type Cluster struct {
@@ -79,6 +79,9 @@ type Cluster struct {
 	// rootToken is the initial root token created when the Vault cluster is
 	// created.
 	rootToken string
+
+	// vaultImage is the docker image to use for running vault. Defaults to 'hashicorp/vault:latest'
+	vaultImage string
 }
 
 // Teardown stops all the containers.
@@ -454,9 +457,12 @@ func (n *dockerClusterNode) setupCert() error {
 }
 
 // NewEnvironment creates a new Stepwise Environment for executing tests
-func NewEnvironment(name string, options *stepwise.MountOptions) *Cluster {
+func NewEnvironment(name string, options *stepwise.MountOptions, vaultImage string) *Cluster {
 	if options == nil {
 		return nil
+	}
+	if vaultImage == "" {
+		vaultImage = defaultImage
 	}
 
 	clusterUUID, err := uuid.GenerateUUID()
@@ -469,6 +475,7 @@ func NewEnvironment(name string, options *stepwise.MountOptions) *Cluster {
 		ClusterName:  fmt.Sprintf("test-%s-%s", name, clusterUUID),
 		RaftStorage:  true,
 		MountOptions: *options,
+		vaultImage:   vaultImage,
 	}
 }
 
@@ -589,7 +596,7 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 	r := &Runner{
 		dockerAPI: cli,
 		ContainerConfig: &container.Config{
-			Image: vaultImage,
+			Image: n.Cluster.vaultImage,
 			Entrypoint: []string{"/bin/sh", "-c", "update-ca-certificates && " +
 				"exec /usr/local/bin/docker-entrypoint.sh vault server -log-level=trace -dev-plugin-dir=/vault/config -config /vault/config/local.json"},
 			Env: []string{
