@@ -106,7 +106,7 @@ type MountOptions struct {
 
 	// PluginType is the optional type of plugin. See PluginType const defined
 	// above
-	PluginType PluginType
+	PluginType api.PluginType
 
 	// PluginName represents the name of the plugin that gets compiled. In the
 	// standard plugin project file layout, it represents the folder under the
