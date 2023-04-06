@@ -529,6 +529,19 @@ func (n *dockerClusterNode) NewAPIClient() (*api.Client, error) {
 	return apiClient, nil
 }
 
+// ImagePull pull image
+func (n *dockerClusterNode) ImagePull() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	reader, err := n.dockerAPI.ImagePull(ctx, n.Cluster.vaultImage, types.ImagePullOptions{})
+	if err != nil {
+		return err
+	}
+
+	defer reader.Close()
+	return nil
+}
+
 // Cleanup kills the container of the node
 func (n *dockerClusterNode) Cleanup() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -540,6 +553,11 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 	n.dockerAPI = cli
 
 	err := n.setupCert()
+	if err != nil {
+		return err
+	}
+
+	err = n.ImagePull()
 	if err != nil {
 		return err
 	}
@@ -596,7 +614,7 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 	r := &Runner{
 		dockerAPI: cli,
 		ContainerConfig: &container.Config{
-			Image: n.Cluster.vaultImage,
+			Image: "vault",
 			Entrypoint: []string{"/bin/sh", "-c", "update-ca-certificates && " +
 				"exec /usr/local/bin/docker-entrypoint.sh vault server -log-level=trace -dev-plugin-dir=/vault/config -config /vault/config/local.json"},
 			Env: []string{
