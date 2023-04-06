@@ -33,7 +33,7 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/hashicorp/go-cleanhttp"
 	"github.com/hashicorp/go-multierror"
-	"github.com/hashicorp/go-uuid"
+	uuid "github.com/hashicorp/go-uuid"
 	"github.com/hashicorp/vault/api"
 	"golang.org/x/net/http2"
 )
@@ -126,7 +126,7 @@ func (dc *Cluster) MountPath() string {
 	}
 
 	dc.mountPath = fmt.Sprintf("%s_%s", prefix, uuidStr)
-	if dc.MountOptions.PluginType == stepwise.PluginTypeCredential {
+	if dc.MountOptions.PluginType == api.PluginTypeCredential {
 		dc.mountPath = path.Join("auth", dc.mountPath)
 	}
 
@@ -845,7 +845,7 @@ func (dc *Cluster) Setup() error {
 	// use client to mount plugin
 	err = client.Sys().RegisterPlugin(&api.RegisterPluginInput{
 		Name:    registryName,
-		Type:    api.PluginType(dc.MountOptions.PluginType),
+		Type:    dc.MountOptions.PluginType,
 		Command: binName,
 		SHA256:  sha256value,
 	})
@@ -854,15 +854,15 @@ func (dc *Cluster) Setup() error {
 	}
 
 	switch dc.MountOptions.PluginType {
-	case stepwise.PluginTypeCredential:
+	case api.PluginTypeCredential:
 		// the mount path includes "auth/" for credential type plugins. For enabling
 		// auth mounts via the /sys endpoint, we need to remove that prefix
 		authPath := strings.TrimPrefix(dc.MountPath(), "auth/")
 		err = client.Sys().EnableAuthWithOptions(authPath, &api.EnableAuthOptions{
 			Type: registryName,
 		})
-	case stepwise.PluginTypeDatabase:
-	case stepwise.PluginTypeSecrets:
+	case api.PluginTypeDatabase:
+	case api.PluginTypeSecrets:
 		err = client.Sys().Mount(dc.MountPath(), &api.MountInput{
 			Type: registryName,
 		})
