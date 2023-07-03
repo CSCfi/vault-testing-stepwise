@@ -55,7 +55,7 @@ func (d *Runner) Start(ctx context.Context) (*types.ContainerJSON, error) {
 	// Best-effort pull. ImageCreate here will use a matching image from the local
 	// Docker library, or if not found pull the matching image from docker hub. If
 	// not found on docker hub, returns an error. The response must be read in
-	// order for the local image.
+	// order for the local image to be used.
 	resp, err := d.dockerAPI.ImageCreate(ctx, d.ContainerConfig.Image, types.ImageCreateOptions{})
 	if err != nil {
 		return nil, err
@@ -76,38 +76,50 @@ func (d *Runner) Start(ctx context.Context) (*types.ContainerJSON, error) {
 	// copies the plugin binary into the Docker file system. This copy is only
 	// allowed before the container is started
 	for from, to := range d.CopyFromTo {
-		srcInfo, err := archive.CopyInfoSourcePath(from, false)
-		if err != nil {
-			return nil, fmt.Errorf("error copying from source %q: %v", from, err)
-		}
-
-		srcArchive, err := archive.TarResource(srcInfo)
-		if err != nil {
-			return nil, fmt.Errorf("error creating tar from source %q: %v", from, err)
-		}
-		defer srcArchive.Close()
-
-		dstInfo := archive.CopyInfo{Path: to}
-
-		dstDir, content, err := archive.PrepareArchiveCopy(srcArchive, srcInfo, dstInfo)
-		if err != nil {
-			return nil, fmt.Errorf("error preparing copy from %q -> %q: %v", from, to, err)
-		}
-		defer content.Close()
-		err = d.dockerAPI.CopyToContainer(ctx, container.ID, dstDir, content, types.CopyToContainerOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("error copying from %q -> %q: %v", from, to, err)
+		if err := copyToContainer(ctx, d.dockerAPI, container.ID, from, to); err != nil {
+			_ = d.dockerAPI.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{})
+			return nil, err
 		}
 	}
 
 	err = d.dockerAPI.ContainerStart(ctx, container.ID, types.ContainerStartOptions{})
 	if err != nil {
+		_ = d.dockerAPI.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{})
 		return nil, fmt.Errorf("container start failed: %v", err)
 	}
 
 	inspect, err := d.dockerAPI.ContainerInspect(ctx, container.ID)
 	if err != nil {
+		_ = d.dockerAPI.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{})
 		return nil, err
 	}
 	return &inspect, nil
+}
+
+func copyToContainer(ctx context.Context, d *docker.Client, containerID, from, to string) error {
+	srcInfo, err := archive.CopyInfoSourcePath(from, false)
+	if err != nil {
+		return fmt.Errorf("error copying from source %q: %v", from, err)
+	}
+
+	srcArchive, err := archive.TarResource(srcInfo)
+	if err != nil {
+		return fmt.Errorf("error creating tar from source %q: %v", from, err)
+	}
+	defer srcArchive.Close()
+
+	dstInfo := archive.CopyInfo{Path: to}
+
+	dstDir, content, err := archive.PrepareArchiveCopy(srcArchive, srcInfo, dstInfo)
+	if err != nil {
+		return fmt.Errorf("error preparing copy from %q -> %q: %v", from, to, err)
+	}
+	defer content.Close()
+
+	err = d.CopyToContainer(ctx, containerID, dstDir, content, types.CopyToContainerOptions{})
+	if err != nil {
+		return fmt.Errorf("error copying from %q -> %q: %v", from, to, err)
+	}
+
+	return nil
 }
