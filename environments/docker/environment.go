@@ -529,19 +529,6 @@ func (n *dockerClusterNode) NewAPIClient() (*api.Client, error) {
 	return apiClient, nil
 }
 
-// ImagePull pull image
-func (n *dockerClusterNode) ImagePull() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	reader, err := n.dockerAPI.ImagePull(ctx, n.Cluster.vaultImage, types.ImagePullOptions{})
-	if err != nil {
-		return err
-	}
-
-	defer reader.Close()
-	return nil
-}
-
 // Cleanup kills the container of the node
 func (n *dockerClusterNode) Cleanup() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -553,11 +540,6 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 	n.dockerAPI = cli
 
 	err := n.setupCert()
-	if err != nil {
-		return err
-	}
-
-	err = n.ImagePull()
 	if err != nil {
 		return err
 	}
@@ -614,10 +596,12 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 	r := &Runner{
 		dockerAPI: cli,
 		ContainerConfig: &container.Config{
-			Image: "vault",
-			Entrypoint: []string{"/bin/sh", "-c", "update-ca-certificates && " +
+			Image: n.Cluster.vaultImage,
+			Entrypoint: []string{"/bin/sh", "-c",
 				"exec /usr/local/bin/docker-entrypoint.sh vault server -log-level=trace -dev-plugin-dir=/vault/config -config /vault/config/local.json"},
 			Env: []string{
+				"SKIP_SETCAP=true",
+				"VAULT_LOG_FORMAT=json",
 				"VAULT_CLUSTER_INTERFACE=eth0",
 				"VAULT_API_ADDR=https://127.0.0.1:8200",
 				fmt.Sprintf("VAULT_REDIRECT_ADDR=https://%s:8200", n.Name()),
