@@ -614,10 +614,12 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 	r := &Runner{
 		dockerAPI: cli,
 		ContainerConfig: &container.Config{
-			Image: "vault",
-			Entrypoint: []string{"/bin/sh", "-c", "update-ca-certificates && " +
+			Image: n.Cluster.vaultImage,
+			Entrypoint: []string{"/bin/sh", "-c",
 				"exec /usr/local/bin/docker-entrypoint.sh vault server -log-level=trace -dev-plugin-dir=/vault/config -config /vault/config/local.json"},
 			Env: []string{
+				"SKIP_SETCAP=true",
+				"VAULT_LOG_FORMAT=json",
 				"VAULT_CLUSTER_INTERFACE=eth0",
 				"VAULT_API_ADDR=https://127.0.0.1:8200",
 				fmt.Sprintf("VAULT_REDIRECT_ADDR=https://%s:8200", n.Name()),
