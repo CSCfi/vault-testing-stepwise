@@ -144,8 +144,8 @@ type Step struct {
 	// Alternatively get data from a function
 	GetData func() (map[string]interface{}, error)
 
-	// ReadData is the data to pass to a read request
-	ReadData map[string][]string
+	// BodyData is the data to pass to a read or delete request
+	BodyData map[string][]string
 
 	// Assert is a function that is called after this step is executed in order to
 	// test that the step executed successfully. If this is not set, then the next
@@ -330,13 +330,16 @@ func makeRequest(tt TestT, env Environment, step Step) (*api.Secret, error) {
 	case WriteOperation, UpdateOperation:
 		return client.Logical().Write(path, data)
 	case ReadOperation:
-		if step.ReadData != nil {
-			return client.Logical().ReadWithData(path, step.ReadData)
+		if step.BodyData != nil {
+			return client.Logical().ReadWithData(path, step.BodyData)
 		}
 		return client.Logical().Read(path)
 	case ListOperation:
 		return client.Logical().List(path)
 	case DeleteOperation:
+		if step.BodyData != nil {
+			return client.Logical().DeleteWithData(path, step.BodyData)
+		}
 		return client.Logical().Delete(path)
 	default:
 		return nil, fmt.Errorf("invalid operation: %s", step.Operation)
