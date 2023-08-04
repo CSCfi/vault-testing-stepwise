@@ -11,7 +11,7 @@ require (
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/hashicorp/vault/sdk v0.9.2
-	golang.org/x/net v0.12.0
+	golang.org/x/net v0.13.0
 )
 
 require (
