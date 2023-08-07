@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/hashicorp/vault/api v1.9.2
-	github.com/hashicorp/vault/sdk v0.9.2
+	github.com/hashicorp/vault/sdk v0.9.2-0.20230721171514-bf23fe8636b0
 	golang.org/x/net v0.14.0
 )
 
