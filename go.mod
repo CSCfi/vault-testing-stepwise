@@ -3,7 +3,7 @@ module github.com/CSCfi/vault-testing-stepwise
 go 1.20
 
 require (
-	github.com/docker/docker v25.0.0+incompatible
+	github.com/docker/docker v25.0.1+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-hclog v1.6.2
