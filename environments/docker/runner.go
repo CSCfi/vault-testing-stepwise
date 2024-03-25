@@ -3,10 +3,11 @@ package docker
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/strslice"
 	docker "github.com/docker/docker/client"
@@ -56,19 +57,19 @@ func (d *Runner) Start(ctx context.Context) (*types.ContainerJSON, error) {
 	// Docker library, or if not found pull the matching image from docker hub. If
 	// not found on docker hub, returns an error. The response must be read in
 	// order for the local image to be used.
-	resp, err := d.dockerAPI.ImageCreate(ctx, d.ContainerConfig.Image, types.ImageCreateOptions{})
+	resp, err := d.dockerAPI.ImageCreate(ctx, d.ContainerConfig.Image, image.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
 	if resp != nil {
-		_, _ = ioutil.ReadAll(resp)
+		_, _ = io.ReadAll(resp)
 	}
 
 	cfg := *d.ContainerConfig
 	hostConfig.CapAdd = strslice.StrSlice{"IPC_LOCK", "NET_ADMIN"}
 	cfg.Hostname = d.ContainerName
 	fullName := d.ContainerName
-	container, err := d.dockerAPI.ContainerCreate(ctx, &cfg, hostConfig, networkingConfig, nil, fullName)
+	dockerContainer, err := d.dockerAPI.ContainerCreate(ctx, &cfg, hostConfig, networkingConfig, nil, fullName)
 	if err != nil {
 		return nil, fmt.Errorf("container create failed: %v", err)
 	}
@@ -76,21 +77,21 @@ func (d *Runner) Start(ctx context.Context) (*types.ContainerJSON, error) {
 	// copies the plugin binary into the Docker file system. This copy is only
 	// allowed before the container is started
 	for from, to := range d.CopyFromTo {
-		if err := copyToContainer(ctx, d.dockerAPI, container.ID, from, to); err != nil {
-			_ = d.dockerAPI.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{})
+		if err := copyToContainer(ctx, d.dockerAPI, dockerContainer.ID, from, to); err != nil {
+			_ = d.dockerAPI.ContainerRemove(ctx, dockerContainer.ID, container.RemoveOptions{})
 			return nil, err
 		}
 	}
 
-	err = d.dockerAPI.ContainerStart(ctx, container.ID, types.ContainerStartOptions{})
+	err = d.dockerAPI.ContainerStart(ctx, dockerContainer.ID, container.StartOptions{})
 	if err != nil {
-		_ = d.dockerAPI.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{})
+		_ = d.dockerAPI.ContainerRemove(ctx, dockerContainer.ID, container.RemoveOptions{})
 		return nil, fmt.Errorf("container start failed: %v", err)
 	}
 
-	inspect, err := d.dockerAPI.ContainerInspect(ctx, container.ID)
+	inspect, err := d.dockerAPI.ContainerInspect(ctx, dockerContainer.ID)
 	if err != nil {
-		_ = d.dockerAPI.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{})
+		_ = d.dockerAPI.ContainerRemove(ctx, dockerContainer.ID, container.RemoveOptions{})
 		return nil, err
 	}
 	return &inspect, nil
