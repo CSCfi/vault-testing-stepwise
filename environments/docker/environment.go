@@ -13,7 +13,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	mathrand "math/rand"
 	"net"
@@ -352,7 +351,7 @@ func (dc *Cluster) setupCA(opts *ClusterOptions) error {
 	dc.CACertPEM = pem.EncodeToMemory(CACertPEMBlock)
 
 	dc.CACertPEMFile = filepath.Join(dc.tmpDir, "ca", "ca.pem")
-	err = ioutil.WriteFile(dc.CACertPEMFile, dc.CACertPEM, 0o755)
+	err = os.WriteFile(dc.CACertPEMFile, dc.CACertPEM, 0o755)
 	if err != nil {
 		return err
 	}
@@ -418,13 +417,13 @@ func (n *dockerClusterNode) setupCert() error {
 	})
 
 	n.ServerCertPEMFile = filepath.Join(n.WorkDir, "cert.pem")
-	err = ioutil.WriteFile(n.ServerCertPEMFile, n.ServerCertPEM, 0o755)
+	err = os.WriteFile(n.ServerCertPEMFile, n.ServerCertPEM, 0o755)
 	if err != nil {
 		return err
 	}
 
 	n.ServerKeyPEMFile = filepath.Join(n.WorkDir, "key.pem")
-	err = ioutil.WriteFile(n.ServerKeyPEMFile, n.ServerKeyPEM, 0o755)
+	err = os.WriteFile(n.ServerKeyPEMFile, n.ServerKeyPEM, 0o755)
 	if err != nil {
 		return err
 	}
@@ -579,7 +578,7 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 		return err
 	}
 
-	err = ioutil.WriteFile(filepath.Join(n.WorkDir, "local.json"), cfgJSON, 0o644)
+	err = os.WriteFile(filepath.Join(n.WorkDir, "local.json"), cfgJSON, 0o644)
 	if err != nil {
 		return err
 	}
@@ -710,7 +709,7 @@ func (dc *Cluster) setupDockerCluster(opts *ClusterOptions) error {
 		}
 		dc.tmpDir = opts.tmpDir
 	} else {
-		tempDir, err := ioutil.TempDir("", "vault-test-cluster-")
+		tempDir, err := os.MkdirTemp("", "vault-test-cluster-")
 		if err != nil {
 			return err
 		}
@@ -826,7 +825,7 @@ func (dc *Cluster) Setup() error {
 	}
 
 	// tmpDir gets cleaned up when the cluster is cleaned up
-	tmpDir, err := ioutil.TempDir("", "vault-bin-")
+	tmpDir, err := os.MkdirTemp("", "vault-bin-")
 	if err != nil {
 		return err
 	}
