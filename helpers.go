@@ -18,7 +18,7 @@ import (
 )
 
 const pluginPrefix = "vault-plugin-"
-const golangImage = "golang:1.20-alpine" // Must be Alpine linux for compatibility with the vault image
+const golangImage = "golang:1.21-alpine" // Must be Alpine linux for compatibility with the vault image
 
 // CompilePlugin is a helper method to compile a source plugin
 func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, string, error) {
