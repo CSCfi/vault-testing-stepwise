@@ -1,6 +1,6 @@
 module github.com/CSCfi/vault-testing-stepwise
 
-go 1.21
+go 1.22.2
 
 require (
 	github.com/docker/docker v26.1.2+incompatible
