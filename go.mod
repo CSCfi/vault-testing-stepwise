@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/docker/docker v26.1.5+incompatible
-	github.com/docker/go-connections v0.5.0
+	github.com/docker/go-connections v0.6.0
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-multierror v1.1.1
