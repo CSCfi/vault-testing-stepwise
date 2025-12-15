@@ -436,7 +436,7 @@ func (n *dockerClusterNode) setupCert() error {
 		return err
 	}
 
-	certGetter := stepwise.NewCertificateGetter(n.ServerCertPEMFile, n.ServerKeyPEMFile, "")
+	certGetter := stepwise.NewCertificateGetter(n.ServerCertPEMFile, n.ServerKeyPEMFile)
 	if err := certGetter.Reload(); err != nil {
 		return err
 	}

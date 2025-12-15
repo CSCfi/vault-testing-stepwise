@@ -7,8 +7,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -72,16 +70,14 @@ type CertificateGetter struct {
 
 	cert *tls.Certificate
 
-	certFile   string
-	keyFile    string
-	passphrase string
+	certFile string
+	keyFile  string
 }
 
-func NewCertificateGetter(certFile, keyFile, passphrase string) *CertificateGetter {
+func NewCertificateGetter(certFile, keyFile string) *CertificateGetter {
 	return &CertificateGetter{
-		certFile:   certFile,
-		keyFile:    keyFile,
-		passphrase: passphrase,
+		certFile: certFile,
+		keyFile:  keyFile,
 	}
 }
 
@@ -93,20 +89,6 @@ func (cg *CertificateGetter) Reload() error {
 	keyPEMBlock, err := os.ReadFile(cg.keyFile)
 	if err != nil {
 		return err
-	}
-
-	// Check for encrypted pem block
-	keyBlock, _ := pem.Decode(keyPEMBlock)
-	if keyBlock == nil {
-		return errors.New("decoded PEM is blank")
-	}
-
-	if x509.IsEncryptedPEMBlock(keyBlock) { //nolint:staticcheck
-		keyBlock.Bytes, err = x509.DecryptPEMBlock(keyBlock, []byte(cg.passphrase)) //nolint:staticcheck
-		if err != nil {
-			return fmt.Errorf("decrypting PEM block failed %s", err)
-		}
-		keyPEMBlock = pem.EncodeToMemory(keyBlock)
 	}
 
 	cert, err := tls.X509KeyPair(certPEMBlock, keyPEMBlock)
