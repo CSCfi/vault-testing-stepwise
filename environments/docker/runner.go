@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package docker
 
 import (
@@ -69,7 +72,7 @@ func (d *Runner) Start(ctx context.Context) (*types.ContainerJSON, error) {
 	hostConfig.CapAdd = strslice.StrSlice{"IPC_LOCK", "NET_ADMIN"}
 	cfg.Hostname = d.ContainerName
 	fullName := d.ContainerName
-	dockerContainer, err := d.dockerAPI.ContainerCreate(ctx, &cfg, hostConfig, networkingConfig, nil, fullName)
+	newContainer, err := d.dockerAPI.ContainerCreate(ctx, &cfg, hostConfig, networkingConfig, nil, fullName)
 	if err != nil {
 		return nil, fmt.Errorf("container create failed: %v", err)
 	}
@@ -77,21 +80,24 @@ func (d *Runner) Start(ctx context.Context) (*types.ContainerJSON, error) {
 	// copies the plugin binary into the Docker file system. This copy is only
 	// allowed before the container is started
 	for from, to := range d.CopyFromTo {
-		if err := copyToContainer(ctx, d.dockerAPI, dockerContainer.ID, from, to); err != nil {
-			_ = d.dockerAPI.ContainerRemove(ctx, dockerContainer.ID, container.RemoveOptions{})
+		if err := copyToContainer(ctx, d.dockerAPI, newContainer.ID, from, to); err != nil {
+			_ = d.dockerAPI.ContainerRemove(ctx, newContainer.ID, container.RemoveOptions{})
+
 			return nil, err
 		}
 	}
 
-	err = d.dockerAPI.ContainerStart(ctx, dockerContainer.ID, container.StartOptions{})
+	err = d.dockerAPI.ContainerStart(ctx, newContainer.ID, container.StartOptions{})
 	if err != nil {
-		_ = d.dockerAPI.ContainerRemove(ctx, dockerContainer.ID, container.RemoveOptions{})
+		_ = d.dockerAPI.ContainerRemove(ctx, newContainer.ID, container.RemoveOptions{})
+
 		return nil, fmt.Errorf("container start failed: %v", err)
 	}
 
-	inspect, err := d.dockerAPI.ContainerInspect(ctx, dockerContainer.ID)
+	inspect, err := d.dockerAPI.ContainerInspect(ctx, newContainer.ID)
 	if err != nil {
-		_ = d.dockerAPI.ContainerRemove(ctx, dockerContainer.ID, container.RemoveOptions{})
+		_ = d.dockerAPI.ContainerRemove(ctx, newContainer.ID, container.RemoveOptions{})
+
 		return nil, err
 	}
 	return &inspect, nil
