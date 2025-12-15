@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -21,7 +20,7 @@ import (
 )
 
 const pluginPrefix = "vault-plugin-"
-const golangImage = "golang:1.22-alpine" // Must be Alpine linux for compatibility with the vault image
+const golangImage = "golang:1.25-alpine" // Must be Alpine linux for compatibility with the vault image
 
 // CompilePlugin is a helper method to compile a source plugin
 func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, string, error) {
@@ -87,11 +86,11 @@ func NewCertificateGetter(certFile, keyFile, passphrase string) *CertificateGett
 }
 
 func (cg *CertificateGetter) Reload() error {
-	certPEMBlock, err := ioutil.ReadFile(cg.certFile)
+	certPEMBlock, err := os.ReadFile(cg.certFile)
 	if err != nil {
 		return err
 	}
-	keyPEMBlock, err := ioutil.ReadFile(cg.keyFile)
+	keyPEMBlock, err := os.ReadFile(cg.keyFile)
 	if err != nil {
 		return err
 	}

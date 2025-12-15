@@ -42,7 +42,7 @@ import (
 
 var _ stepwise.Environment = (*Cluster)(nil)
 
-const dockerVersion = "1.41"
+const dockerVersion = "1.51"
 const defaultImage = "hashicorp/vault:latest"
 
 // Cluster is used for managing the lifecycle of the test Vault cluster
