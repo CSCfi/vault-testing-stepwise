@@ -28,19 +28,20 @@ import (
 	"time"
 
 	stepwise "github.com/CSCfi/vault-testing-stepwise"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/network"
-	docker "github.com/docker/docker/client"
-	"github.com/docker/go-connections/nat"
 	"github.com/hashicorp/go-cleanhttp"
 	"github.com/hashicorp/go-multierror"
 	uuid "github.com/hashicorp/go-uuid"
 	"github.com/hashicorp/vault/api"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	docker "github.com/moby/moby/client"
 	"golang.org/x/net/http2"
 )
 
 var _ stepwise.Environment = (*Cluster)(nil)
+
+var port8200 = network.MustParsePort("8200/tcp")
+var port8201 = network.MustParsePort("8201/tcp")
 
 const dockerVersion = "1.51"
 const defaultImage = "hashicorp/vault:latest"
@@ -97,11 +98,11 @@ func (dc *Cluster) Teardown() error {
 
 	// clean up networks
 	if dc.networkID != "" {
-		cli, err := docker.NewClientWithOpts(docker.FromEnv, docker.WithVersion(dockerVersion))
+		cli, err := docker.New(docker.FromEnv, docker.WithVersion(dockerVersion))
 		if err != nil {
 			return multierror.Append(result, err)
 		}
-		if err := cli.NetworkRemove(context.Background(), dc.networkID); err != nil {
+		if _, err := cli.NetworkRemove(context.Background(), dc.networkID, docker.NetworkRemoveOptions{}); err != nil {
 			return multierror.Append(result, err)
 		}
 	}
@@ -497,7 +498,7 @@ type dockerClusterNode struct {
 	TLSConfig         *tls.Config
 	WorkDir           string
 	Cluster           *Cluster
-	container         *types.ContainerJSON
+	container         *container.InspectResponse
 	dockerAPI         *docker.Client
 }
 
@@ -535,7 +536,9 @@ func (n *dockerClusterNode) NewAPIClient() (*api.Client, error) {
 func (n *dockerClusterNode) Cleanup() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	return n.dockerAPI.ContainerKill(ctx, n.container.ID, "KILL")
+	_, err := n.dockerAPI.ContainerKill(ctx, n.container.ID, docker.ContainerKillOptions{Signal: "KILL"})
+
+	return err
 }
 
 func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, netCIDR *dockerClusterNode, pluginBinPath string) error {
@@ -609,7 +612,7 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 				fmt.Sprintf("VAULT_REDIRECT_ADDR=https://%s:8200", n.Name()),
 			},
 			Labels:       nil,
-			ExposedPorts: nat.PortSet{"8200/tcp": {}, "8201/tcp": {}},
+			ExposedPorts: network.PortSet{port8200: {}, port8201: {}},
 		},
 		ContainerName: n.Name(),
 		NetName:       netName,
@@ -621,11 +624,13 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 		return err
 	}
 
+	ipAddr := n.container.NetworkSettings.Networks[netName].IPAddress
+
 	n.Address = &net.TCPAddr{
-		IP:   net.ParseIP(n.container.NetworkSettings.IPAddress),
+		IP:   net.IP(ipAddr.AsSlice()),
 		Port: 8200,
 	}
-	ports := n.container.NetworkSettings.NetworkSettingsBase.Ports[nat.Port("8200/tcp")]
+	ports := n.container.NetworkSettings.Ports[port8200]
 	if len(ports) == 0 {
 		err := n.Cleanup()
 		if err != nil {
@@ -800,7 +805,7 @@ func setupNetwork(cli *docker.Client, netName string) (string, error) {
 }
 
 func createNetwork(cli *docker.Client, netName string) (string, error) {
-	resp, err := cli.NetworkCreate(context.Background(), netName, network.CreateOptions{
+	resp, err := cli.NetworkCreate(context.Background(), netName, docker.NetworkCreateOptions{
 		Driver:  "bridge",
 		Options: map[string]string{},
 		IPAM: &network.IPAM{
