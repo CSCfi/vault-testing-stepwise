@@ -1,15 +1,15 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package stepwise
 
 import (
 	"bytes"
 	"crypto/sha256"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -18,7 +18,7 @@ import (
 )
 
 const pluginPrefix = "vault-plugin-"
-const golangImage = "golang:1.22-alpine" // Must be Alpine linux for compatibility with the vault image
+const golangImage = "golang:1.25-alpine" // Must be Alpine linux for compatibility with the vault image
 
 // CompilePlugin is a helper method to compile a source plugin
 func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, string, error) {
@@ -70,41 +70,25 @@ type CertificateGetter struct {
 
 	cert *tls.Certificate
 
-	certFile   string
-	keyFile    string
-	passphrase string
+	certFile string
+	keyFile  string
 }
 
-func NewCertificateGetter(certFile, keyFile, passphrase string) *CertificateGetter {
+func NewCertificateGetter(certFile, keyFile string) *CertificateGetter {
 	return &CertificateGetter{
-		certFile:   certFile,
-		keyFile:    keyFile,
-		passphrase: passphrase,
+		certFile: certFile,
+		keyFile:  keyFile,
 	}
 }
 
 func (cg *CertificateGetter) Reload() error {
-	certPEMBlock, err := ioutil.ReadFile(cg.certFile)
+	certPEMBlock, err := os.ReadFile(cg.certFile)
 	if err != nil {
 		return err
 	}
-	keyPEMBlock, err := ioutil.ReadFile(cg.keyFile)
+	keyPEMBlock, err := os.ReadFile(cg.keyFile)
 	if err != nil {
 		return err
-	}
-
-	// Check for encrypted pem block
-	keyBlock, _ := pem.Decode(keyPEMBlock)
-	if keyBlock == nil {
-		return errors.New("decoded PEM is blank")
-	}
-
-	if x509.IsEncryptedPEMBlock(keyBlock) { //nolint:staticcheck
-		keyBlock.Bytes, err = x509.DecryptPEMBlock(keyBlock, []byte(cg.passphrase)) //nolint:staticcheck
-		if err != nil {
-			return fmt.Errorf("decrypting PEM block failed %s", err)
-		}
-		keyPEMBlock = pem.EncodeToMemory(keyBlock)
 	}
 
 	cert, err := tls.X509KeyPair(certPEMBlock, keyPEMBlock)

@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package docker
 
 import (
@@ -39,7 +42,7 @@ import (
 
 var _ stepwise.Environment = (*Cluster)(nil)
 
-const dockerVersion = "1.41"
+const dockerVersion = "1.51"
 const defaultImage = "hashicorp/vault:latest"
 
 // Cluster is used for managing the lifecycle of the test Vault cluster
@@ -433,7 +436,7 @@ func (n *dockerClusterNode) setupCert() error {
 		return err
 	}
 
-	certGetter := stepwise.NewCertificateGetter(n.ServerCertPEMFile, n.ServerKeyPEMFile, "")
+	certGetter := stepwise.NewCertificateGetter(n.ServerCertPEMFile, n.ServerKeyPEMFile)
 	if err := certGetter.Reload(); err != nil {
 		return err
 	}
@@ -797,10 +800,9 @@ func setupNetwork(cli *docker.Client, netName string) (string, error) {
 }
 
 func createNetwork(cli *docker.Client, netName string) (string, error) {
-	resp, err := cli.NetworkCreate(context.Background(), netName, types.NetworkCreate{
-		CheckDuplicate: true,
-		Driver:         "bridge",
-		Options:        map[string]string{},
+	resp, err := cli.NetworkCreate(context.Background(), netName, network.CreateOptions{
+		Driver:  "bridge",
+		Options: map[string]string{},
 		IPAM: &network.IPAM{
 			Driver:  "default",
 			Options: map[string]string{},
@@ -860,12 +862,14 @@ func (dc *Cluster) Setup() error {
 		// auth mounts via the /sys endpoint, we need to remove that prefix
 		authPath := strings.TrimPrefix(dc.MountPath(), "auth/")
 		err = client.Sys().EnableAuthWithOptions(authPath, &api.EnableAuthOptions{
-			Type: registryName,
+			Type:   registryName,
+			Config: dc.MountOptions.MountConfigInput,
 		})
 	case api.PluginTypeDatabase:
 	case api.PluginTypeSecrets:
 		err = client.Sys().Mount(dc.MountPath(), &api.MountInput{
-			Type: registryName,
+			Type:   registryName,
+			Config: dc.MountOptions.MountConfigInput,
 		})
 	default:
 		return fmt.Errorf("unknown plugin type: %s", dc.MountOptions.PluginType.String())

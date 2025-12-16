@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 // Package stepwise offers types and functions to enable black-box style tests
 // that are executed in defined set of steps. Stepwise utilizes "Environments" which
 // setup a running instance of Vault and provide a valid API client to execute
@@ -11,7 +14,6 @@ import (
 
 	log "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/vault/api"
-	"github.com/hashicorp/vault/sdk/helper/consts"
 	"github.com/hashicorp/vault/sdk/helper/logging"
 )
 
@@ -61,34 +63,6 @@ type Environment interface {
 	RootToken() string
 }
 
-// PluginType defines the types of plugins supported
-// This type re-create constants as a convenience so users don't need to import/use
-// the consts package.
-type PluginType consts.PluginType
-
-// These are originally defined in sdk/helper/consts/plugin_types.go
-const (
-	PluginTypeUnknown PluginType = iota
-	PluginTypeCredential
-	PluginTypeDatabase
-	PluginTypeSecrets
-)
-
-func (p PluginType) String() string {
-	switch p {
-	case PluginTypeUnknown:
-		return "unknown"
-	case PluginTypeCredential:
-		return "auth"
-	case PluginTypeDatabase:
-		return "database"
-	case PluginTypeSecrets:
-		return "secret"
-	default:
-		return "unsupported"
-	}
-}
-
 // MountOptions are a collection of options each step driver should
 // support
 type MountOptions struct {
@@ -121,6 +95,9 @@ type MountOptions struct {
 	// - path_generate.go
 	//
 	PluginName string
+
+	// MountConfigInput represents the configuration input for mounting the plugin.
+	MountConfigInput api.MountConfigInput
 }
 
 // Step represents a single step of a test Case
