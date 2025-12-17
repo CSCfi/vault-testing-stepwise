@@ -33,6 +33,8 @@ func (d *Runner) Start(ctx context.Context) (*container.InspectResponse, error) 
 	hostConfig := &container.HostConfig{
 		PublishAllPorts: true,
 		AutoRemove:      true,
+		CapAdd:          []string{"IPC_LOCK", "NET_ADMIN"},
+		PortBindings:    network.PortMap{},
 	}
 
 	networkingConfig := &network.NetworkingConfig{}
@@ -72,7 +74,6 @@ func (d *Runner) Start(ctx context.Context) (*container.InspectResponse, error) 
 	}
 
 	cfg := *d.ContainerConfig
-	hostConfig.CapAdd = []string{"IPC_LOCK", "NET_ADMIN"}
 	cfg.Hostname = d.ContainerName
 	fullName := d.ContainerName
 	newContainer, err := d.dockerAPI.ContainerCreate(ctx, docker.ContainerCreateOptions{
