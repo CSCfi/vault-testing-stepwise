@@ -7,13 +7,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/netip"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/strslice"
-	docker "github.com/docker/docker/client"
 	"github.com/moby/go-archive"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	docker "github.com/moby/moby/client"
 )
 
 // Runner manages the lifecycle of the Docker container
@@ -34,6 +33,8 @@ func (d *Runner) Start(ctx context.Context) (*container.InspectResponse, error) 
 	hostConfig := &container.HostConfig{
 		PublishAllPorts: true,
 		AutoRemove:      true,
+		CapAdd:          []string{"IPC_LOCK", "NET_ADMIN"},
+		PortBindings:    network.PortMap{},
 	}
 
 	networkingConfig := &network.NetworkingConfig{}
@@ -46,8 +47,13 @@ func (d *Runner) Start(ctx context.Context) (*container.InspectResponse, error) 
 			Aliases: []string{d.ContainerName},
 		}
 		if len(d.IP) != 0 {
+			runnerIP, err := netip.ParseAddr(d.IP)
+			if err != nil {
+				return nil, fmt.Errorf("runner has invalid IP %s: %v", d.IP, err)
+			}
+
 			es.IPAMConfig = &network.EndpointIPAMConfig{
-				IPv4Address: d.IP,
+				IPv4Address: runnerIP,
 			}
 		}
 		networkingConfig.EndpointsConfig = map[string]*network.EndpointSettings{
@@ -59,7 +65,7 @@ func (d *Runner) Start(ctx context.Context) (*container.InspectResponse, error) 
 	// Docker library, or if not found pull the matching image from docker hub. If
 	// not found on docker hub, returns an error. The response must be read in
 	// order for the local image to be used.
-	resp, err := d.dockerAPI.ImageCreate(ctx, d.ContainerConfig.Image, image.CreateOptions{})
+	resp, err := d.dockerAPI.ImagePull(ctx, d.ContainerConfig.Image, docker.ImagePullOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -68,10 +74,11 @@ func (d *Runner) Start(ctx context.Context) (*container.InspectResponse, error) 
 	}
 
 	cfg := *d.ContainerConfig
-	hostConfig.CapAdd = strslice.StrSlice{"IPC_LOCK", "NET_ADMIN"}
 	cfg.Hostname = d.ContainerName
 	fullName := d.ContainerName
-	newContainer, err := d.dockerAPI.ContainerCreate(ctx, &cfg, hostConfig, networkingConfig, nil, fullName)
+	newContainer, err := d.dockerAPI.ContainerCreate(ctx, docker.ContainerCreateOptions{
+		Config: &cfg, HostConfig: hostConfig, NetworkingConfig: networkingConfig, Name: fullName,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("container create failed: %v", err)
 	}
@@ -80,26 +87,27 @@ func (d *Runner) Start(ctx context.Context) (*container.InspectResponse, error) 
 	// allowed before the container is started
 	for from, to := range d.CopyFromTo {
 		if err := copyToContainer(ctx, d.dockerAPI, newContainer.ID, from, to); err != nil {
-			_ = d.dockerAPI.ContainerRemove(ctx, newContainer.ID, container.RemoveOptions{})
+			_, _ = d.dockerAPI.ContainerRemove(ctx, newContainer.ID, docker.ContainerRemoveOptions{})
 
 			return nil, err
 		}
 	}
 
-	err = d.dockerAPI.ContainerStart(ctx, newContainer.ID, container.StartOptions{})
+	_, err = d.dockerAPI.ContainerStart(ctx, newContainer.ID, docker.ContainerStartOptions{})
 	if err != nil {
-		_ = d.dockerAPI.ContainerRemove(ctx, newContainer.ID, container.RemoveOptions{})
+		_, _ = d.dockerAPI.ContainerRemove(ctx, newContainer.ID, docker.ContainerRemoveOptions{})
 
 		return nil, fmt.Errorf("container start failed: %v", err)
 	}
 
-	inspect, err := d.dockerAPI.ContainerInspect(ctx, newContainer.ID)
+	inspect, err := d.dockerAPI.ContainerInspect(ctx, newContainer.ID, docker.ContainerInspectOptions{})
 	if err != nil {
-		_ = d.dockerAPI.ContainerRemove(ctx, newContainer.ID, container.RemoveOptions{})
+		_, _ = d.dockerAPI.ContainerRemove(ctx, newContainer.ID, docker.ContainerRemoveOptions{})
 
 		return nil, err
 	}
-	return &inspect, nil
+
+	return &inspect.Container, nil
 }
 
 func copyToContainer(ctx context.Context, d *docker.Client, containerID, from, to string) error {
@@ -122,7 +130,7 @@ func copyToContainer(ctx context.Context, d *docker.Client, containerID, from, t
 	}
 	defer content.Close()
 
-	err = d.CopyToContainer(ctx, containerID, dstDir, content, container.CopyToContainerOptions{})
+	_, err = d.CopyToContainer(ctx, containerID, docker.CopyToContainerOptions{Content: content, DestinationPath: dstDir})
 	if err != nil {
 		return fmt.Errorf("error copying from %q -> %q: %v", from, to, err)
 	}
