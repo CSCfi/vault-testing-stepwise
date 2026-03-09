@@ -11,7 +11,7 @@ require (
 	github.com/hashicorp/vault/sdk v0.23.0
 	github.com/moby/go-archive v0.2.0
 	github.com/moby/moby/api v1.54.0
-	github.com/moby/moby/client v0.2.2
+	github.com/moby/moby/client v0.3.0
 	golang.org/x/net v0.51.0
 )
 
