@@ -8,7 +8,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/hashicorp/vault/api v1.22.0
-	github.com/hashicorp/vault/sdk v0.23.0
+	github.com/hashicorp/vault/sdk v0.24.0
 	github.com/moby/go-archive v0.2.0
 	github.com/moby/moby/api v1.54.0
 	github.com/moby/moby/client v0.3.0
@@ -55,9 +55,9 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.64.0 // indirect
-	go.opentelemetry.io/otel v1.39.0 // indirect
-	go.opentelemetry.io/otel/metric v1.39.0 // indirect
-	go.opentelemetry.io/otel/trace v1.39.0 // indirect
+	go.opentelemetry.io/otel v1.40.0 // indirect
+	go.opentelemetry.io/otel/metric v1.40.0 // indirect
+	go.opentelemetry.io/otel/trace v1.40.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
