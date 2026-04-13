@@ -1,6 +1,6 @@
 module github.com/CSCfi/vault-testing-stepwise
 
-go 1.25.0
+go 1.25.7
 
 require (
 	github.com/hashicorp/go-cleanhttp v0.5.2
@@ -8,7 +8,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/hashicorp/vault/api v1.23.0
-	github.com/hashicorp/vault/sdk v0.25.0
+	github.com/hashicorp/vault/sdk v0.25.1
 	github.com/moby/go-archive v0.2.0
 	github.com/moby/moby/api v1.54.1
 	github.com/moby/moby/client v0.4.0
@@ -25,7 +25,7 @@ require (
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-connections v0.6.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
-	github.com/fatih/color v1.18.0 // indirect
+	github.com/fatih/color v1.19.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -54,11 +54,11 @@ require (
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.64.0 // indirect
-	go.opentelemetry.io/otel v1.40.0 // indirect
-	go.opentelemetry.io/otel/metric v1.40.0 // indirect
-	go.opentelemetry.io/otel/trace v1.40.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0 // indirect
+	go.opentelemetry.io/otel v1.42.0 // indirect
+	go.opentelemetry.io/otel/metric v1.42.0 // indirect
+	go.opentelemetry.io/otel/trace v1.42.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
-	golang.org/x/time v0.14.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 )
