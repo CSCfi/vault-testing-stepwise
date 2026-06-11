@@ -98,7 +98,7 @@ func (dc *Cluster) Teardown() error {
 
 	// clean up networks
 	if dc.networkID != "" {
-		cli, err := docker.New(docker.FromEnv, docker.WithVersion(dockerVersion))
+		cli, err := docker.New(docker.FromEnv, docker.WithAPIVersion(dockerVersion))
 		if err != nil {
 			return multierror.Append(result, err)
 		}
@@ -167,22 +167,20 @@ func (n *dockerClusterNode) Name() string {
 }
 
 func (dc *Cluster) Initialize(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	client, err := dc.ClusterNodes[0].NewAPIClient()
 	if err != nil {
 		return err
 	}
 
 	var resp *api.InitResponse
-	for ctx.Err() == nil {
-		resp, err = client.Sys().Init(&api.InitRequest{
-			SecretShares:    3,
-			SecretThreshold: 3,
-		})
-		if err == nil && resp != nil {
-			break
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
+	resp, err = client.Sys().Init(&api.InitRequest{
+		SecretShares:    3,
+		SecretThreshold: 3,
+	})
 	if err != nil {
 		return err
 	}
@@ -542,6 +540,7 @@ func (n *dockerClusterNode) Cleanup() error {
 }
 
 func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, netCIDR *dockerClusterNode, pluginBinPath string) error {
+	_ = netCIDR // Not used, why?
 	n.dockerAPI = cli
 
 	err := n.setupCert()
@@ -757,7 +756,7 @@ func (dc *Cluster) setupDockerCluster(opts *ClusterOptions) error {
 		return err
 	}
 
-	cli, err := docker.NewClientWithOpts(docker.FromEnv, docker.WithVersion(dockerVersion))
+	cli, err := docker.New(docker.FromEnv, docker.WithAPIVersion(dockerVersion))
 	if err != nil {
 		return err
 	}
