@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -34,6 +35,7 @@ import (
 	"github.com/hashicorp/vault/api"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/registry"
 	docker "github.com/moby/moby/client"
 	"golang.org/x/net/http2"
 )
@@ -85,6 +87,9 @@ type Cluster struct {
 
 	// vaultImage is the docker image to use for running vault. Defaults to 'hashicorp/vault:latest'
 	vaultImage string
+	// registryAuth is the base64-encoded JSON credentials for pulling vaultImage
+	// from a private registry. Set via SetRegistryAuth before calling Run.
+	registryAuth string
 }
 
 // Teardown stops all the containers.
@@ -490,6 +495,23 @@ func NewEnvironment(name string, options *stepwise.MountOptions, vaultImage stri
 	}
 }
 
+// SetRegistryAuth configures credentials for pulling the Vault image from a
+// private registry. Must be called before Run.
+func (dc *Cluster) SetRegistryAuth(username, password, serverAddress string) error {
+	authConfig := registry.AuthConfig{
+		Username:      username,
+		Password:      password,
+		ServerAddress: serverAddress,
+	}
+	authJSON, err := json.Marshal(authConfig)
+	if err != nil {
+		return fmt.Errorf("failed to encode registry auth: %w", err)
+	}
+	dc.registryAuth = base64.URLEncoding.EncodeToString(authJSON)
+
+	return nil
+}
+
 // DockerClusterNode represents a single instance of Vault in a cluster
 type dockerClusterNode struct {
 	NodeID            string
@@ -612,7 +634,8 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 	}
 
 	r := &Runner{
-		dockerAPI: cli,
+		dockerAPI:    cli,
+		RegistryAuth: n.Cluster.registryAuth,
 		ContainerConfig: &container.Config{
 			Image: n.Cluster.vaultImage,
 			Entrypoint: []string{"/bin/sh", "-c",

@@ -25,6 +25,9 @@ type Runner struct {
 	NetName         string
 	IP              string
 	CopyFromTo      map[string]string
+	// RegistryAuth is the base64-encoded JSON credentials for a private image registry.
+	// Use Cluster.SetRegistryAuth to populate this field.
+	RegistryAuth string
 }
 
 // Start is responsible for executing the Vault container. It consists of
@@ -114,7 +117,7 @@ func (d *Runner) ensureImage(ctx context.Context, image string) error {
 		}
 	}
 
-	resp, err := d.dockerAPI.ImagePull(ctx, image, docker.ImagePullOptions{})
+	resp, err := d.dockerAPI.ImagePull(ctx, image, docker.ImagePullOptions{RegistryAuth: d.RegistryAuth})
 	if err != nil {
 		return fmt.Errorf("failed to pull image %q: %w", image, err)
 	}
