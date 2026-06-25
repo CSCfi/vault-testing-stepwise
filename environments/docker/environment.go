@@ -102,8 +102,15 @@ func (dc *Cluster) Teardown() error {
 		if err != nil {
 			return multierror.Append(result, err)
 		}
+		defer cli.Close()
 		if _, err := cli.NetworkRemove(context.Background(), dc.networkID, docker.NetworkRemoveOptions{}); err != nil {
 			return multierror.Append(result, err)
+		}
+	}
+
+	if dc.tmpDir != "" {
+		if err := os.RemoveAll(dc.tmpDir); err != nil {
+			result = multierror.Append(result, err)
 		}
 	}
 
@@ -171,6 +178,7 @@ func (dc *Cluster) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer client.CloneConfig().HttpClient.CloseIdleConnections()
 
 	var resp *api.InitResponse
 	for ctx.Err() == nil {
@@ -762,6 +770,7 @@ func (dc *Cluster) setupDockerCluster(opts *ClusterOptions) error {
 	if err != nil {
 		return err
 	}
+	defer cli.Close()
 
 	netUUID, err := uuid.GenerateUUID()
 	if err != nil {
@@ -835,11 +844,11 @@ func (dc *Cluster) Setup() error {
 		return err
 	}
 
-	// tmpDir gets cleaned up when the cluster is cleaned up
 	tmpDir, err := os.MkdirTemp("", "vault-bin-")
 	if err != nil {
 		return err
 	}
+	defer os.RemoveAll(tmpDir)
 
 	binName, binPath, sha256value, err := stepwise.CompilePlugin(registryName, pluginName, srcDir, tmpDir)
 	if err != nil {
