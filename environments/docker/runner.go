@@ -4,6 +4,7 @@
 package docker
 
 import (
+	"archive/tar"
 	"context"
 	"fmt"
 	"io"
@@ -130,10 +131,57 @@ func copyToContainer(ctx context.Context, d *docker.Client, containerID, from, t
 	}
 	defer content.Close()
 
-	_, err = d.CopyToContainer(ctx, containerID, docker.CopyToContainerOptions{Content: content, DestinationPath: dstDir})
+	normalizedContent := normalizePerms(content)
+	defer normalizedContent.Close()
+
+	_, err = d.CopyToContainer(ctx, containerID, docker.CopyToContainerOptions{Content: normalizedContent, DestinationPath: dstDir})
 	if err != nil {
 		return fmt.Errorf("error copying from %q -> %q: %v", from, to, err)
 	}
 
 	return nil
+}
+
+// normalizePerms rewrites tar headers so that files are 0644 and directories
+// are 0755 inside the container, regardless of the host filesystem permissions.
+// moby preserves host modes verbatim, which breaks containers that
+// run as a non-root user when the source was created with restrictive modes
+// such as 0600 or 0700.
+func normalizePerms(r io.ReadCloser) io.ReadCloser {
+	pr, pw := io.Pipe()
+	go func() {
+		tr := tar.NewReader(r)
+		tw := tar.NewWriter(pw)
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				_ = tw.Close()
+				pw.Close()
+
+				return
+			}
+			if err != nil {
+				pw.CloseWithError(err)
+
+				return
+			}
+			if hdr.Typeflag == tar.TypeDir || hdr.Mode&0o111 != 0 {
+				hdr.Mode = 0o755
+			} else {
+				hdr.Mode = 0o644
+			}
+			if err := tw.WriteHeader(hdr); err != nil {
+				pw.CloseWithError(err)
+
+				return
+			}
+			if _, err := io.Copy(tw, tr); err != nil {
+				pw.CloseWithError(err)
+
+				return
+			}
+		}
+	}()
+
+	return pr
 }
