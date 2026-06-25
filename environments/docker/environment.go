@@ -544,7 +544,11 @@ func (n *dockerClusterNode) NewAPIClient() (*api.Client, error) {
 func (n *dockerClusterNode) Cleanup() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	_, err := n.dockerAPI.ContainerKill(ctx, n.container.ID, docker.ContainerKillOptions{Signal: "KILL"})
+
+	var err error
+	if n.container != nil {
+		_, err = n.dockerAPI.ContainerKill(ctx, n.container.ID, docker.ContainerKillOptions{Signal: "KILL"})
+	}
 
 	return err
 }

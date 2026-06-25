@@ -32,7 +32,6 @@ const (
 	ReadOperation   Operation = "read"
 	DeleteOperation Operation = "delete"
 	ListOperation   Operation = "list"
-	HelpOperation   Operation = "help"
 )
 
 // Environment is the interface Environments need to implement to be used in
@@ -188,10 +187,6 @@ func Run(tt TestT, c Case) {
 
 	logger := logging.NewVaultLogger(log.Trace)
 
-	if err := c.Environment.Setup(); err != nil {
-		tt.Fatal(err)
-	}
-
 	defer func() {
 		if c.SkipTeardown {
 			logger.Info("driver Teardown skipped")
@@ -201,6 +196,10 @@ func Run(tt TestT, c Case) {
 			logger.Error("error in driver teardown:", "error", err)
 		}
 	}()
+
+	if err := c.Environment.Setup(); err != nil {
+		tt.Fatal(err)
+	}
 
 	// retrieve the root client from the Environment. If this returns an error,
 	// fail immediately
