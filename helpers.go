@@ -28,7 +28,23 @@ func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, str
 	}
 	binPath := path.Join(tmpDir, binName)
 
-	cmd := exec.Command("docker", "run", "--rm", "-v", fmt.Sprintf("%s:%s", tmpDir, tmpDir), "-v", fmt.Sprintf("%s/..:/usr/src/myapp", srcDir), "-w", "/usr/src/myapp", golangImage, "go", "build", "-v", "-o", binPath, path.Join("/usr/src/myapp", pluginName, fmt.Sprintf("cmd/%s/main.go", pluginName)))
+	args := []string{
+		"run", "--rm",
+		"-v", fmt.Sprintf("%s:%s", tmpDir, tmpDir),
+		"-v", fmt.Sprintf("%s/..:/usr/src/myapp", srcDir),
+		"-w", "/usr/src/myapp",
+	}
+
+	if modCache := goModCache(); modCache != "" {
+		args = append(args, "-v", modCache+":/go/pkg/mod")
+	}
+
+	args = append(args, golangImage,
+		"go", "build", "-v", "-o", binPath,
+		path.Join("/usr/src/myapp", pluginName, fmt.Sprintf("cmd/%s/main.go", pluginName)),
+	)
+
+	cmd := exec.Command("docker", args...)
 	cmd.Stdout = &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
 	cmd.Stderr = errOut
@@ -57,6 +73,22 @@ func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, str
 	sha256value := fmt.Sprintf("%x", h.Sum(nil))
 
 	return binName, binPath, sha256value, nil
+}
+
+// goModCache returns the path to the Go module cache on the host, or empty
+// string if it cannot be determined or does not exist.
+func goModCache() string {
+	out, err := exec.Command("go", "env", "GOMODCACHE").Output()
+	if err != nil {
+		return ""
+	}
+
+	dir := strings.TrimSpace(string(out))
+	if _, err := os.Stat(dir); err != nil {
+		return ""
+	}
+
+	return dir
 }
 
 // ReloadFunc are functions that are called when a reload is requested
