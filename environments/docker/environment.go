@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -34,6 +35,7 @@ import (
 	"github.com/hashicorp/vault/api"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/registry"
 	docker "github.com/moby/moby/client"
 	"golang.org/x/net/http2"
 )
@@ -85,6 +87,9 @@ type Cluster struct {
 
 	// vaultImage is the docker image to use for running vault. Defaults to 'hashicorp/vault:latest'
 	vaultImage string
+	// registryAuth is the base64-encoded JSON credentials for pulling vaultImage
+	// from a private registry. Set via SetRegistryAuth before calling Run.
+	registryAuth string
 }
 
 // Teardown stops all the containers.
@@ -102,8 +107,15 @@ func (dc *Cluster) Teardown() error {
 		if err != nil {
 			return multierror.Append(result, err)
 		}
+		defer cli.Close()
 		if _, err := cli.NetworkRemove(context.Background(), dc.networkID, docker.NetworkRemoveOptions{}); err != nil {
 			return multierror.Append(result, err)
+		}
+	}
+
+	if dc.tmpDir != "" {
+		if err := os.RemoveAll(dc.tmpDir); err != nil {
+			result = multierror.Append(result, err)
 		}
 	}
 
@@ -167,20 +179,23 @@ func (n *dockerClusterNode) Name() string {
 }
 
 func (dc *Cluster) Initialize(ctx context.Context) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
 	client, err := dc.ClusterNodes[0].NewAPIClient()
 	if err != nil {
 		return err
 	}
+	defer client.CloneConfig().HttpClient.CloseIdleConnections()
 
 	var resp *api.InitResponse
-	resp, err = client.Sys().Init(&api.InitRequest{
-		SecretShares:    3,
-		SecretThreshold: 3,
-	})
+	for ctx.Err() == nil {
+		resp, err = client.Sys().Init(&api.InitRequest{
+			SecretShares:    3,
+			SecretThreshold: 3,
+		})
+		if err == nil && resp != nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 	if err != nil {
 		return err
 	}
@@ -353,7 +368,7 @@ func (dc *Cluster) setupCA(opts *ClusterOptions) error {
 	dc.CACertPEM = pem.EncodeToMemory(CACertPEMBlock)
 
 	dc.CACertPEMFile = filepath.Join(dc.tmpDir, "ca", "ca.pem")
-	err = os.WriteFile(dc.CACertPEMFile, dc.CACertPEM, 0o755)
+	err = os.WriteFile(dc.CACertPEMFile, dc.CACertPEM, 0o644)
 	if err != nil {
 		return err
 	}
@@ -419,13 +434,13 @@ func (n *dockerClusterNode) setupCert() error {
 	})
 
 	n.ServerCertPEMFile = filepath.Join(n.WorkDir, "cert.pem")
-	err = os.WriteFile(n.ServerCertPEMFile, n.ServerCertPEM, 0o755)
+	err = os.WriteFile(n.ServerCertPEMFile, n.ServerCertPEM, 0o644)
 	if err != nil {
 		return err
 	}
 
 	n.ServerKeyPEMFile = filepath.Join(n.WorkDir, "key.pem")
-	err = os.WriteFile(n.ServerKeyPEMFile, n.ServerKeyPEM, 0o755)
+	err = os.WriteFile(n.ServerKeyPEMFile, n.ServerKeyPEM, 0o644)
 	if err != nil {
 		return err
 	}
@@ -478,6 +493,23 @@ func NewEnvironment(name string, options *stepwise.MountOptions, vaultImage stri
 		MountOptions: *options,
 		vaultImage:   vaultImage,
 	}
+}
+
+// SetRegistryAuth configures credentials for pulling the Vault image from a
+// private registry. Must be called before Run.
+func (dc *Cluster) SetRegistryAuth(username, password, serverAddress string) error {
+	authConfig := registry.AuthConfig{
+		Username:      username,
+		Password:      password,
+		ServerAddress: serverAddress,
+	}
+	authJSON, err := json.Marshal(authConfig)
+	if err != nil {
+		return fmt.Errorf("failed to encode registry auth: %w", err)
+	}
+	dc.registryAuth = base64.URLEncoding.EncodeToString(authJSON)
+
+	return nil
 }
 
 // DockerClusterNode represents a single instance of Vault in a cluster
@@ -534,7 +566,11 @@ func (n *dockerClusterNode) NewAPIClient() (*api.Client, error) {
 func (n *dockerClusterNode) Cleanup() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	_, err := n.dockerAPI.ContainerKill(ctx, n.container.ID, docker.ContainerKillOptions{Signal: "KILL"})
+
+	var err error
+	if n.container != nil {
+		_, err = n.dockerAPI.ContainerKill(ctx, n.container.ID, docker.ContainerKillOptions{Signal: "KILL"})
+	}
 
 	return err
 }
@@ -548,22 +584,22 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 		return err
 	}
 
-	vaultCfg := map[string]interface{}{
-		"listener": map[string]interface{}{
-			"tcp": map[string]interface{}{
+	vaultCfg := map[string]any{
+		"listener": map[string]any{
+			"tcp": map[string]any{
 				"address":       fmt.Sprintf("%s:%d", "0.0.0.0", 8200),
 				"tls_cert_file": "/vault/config/cert.pem",
 				"tls_key_file":  "/vault/config/key.pem",
-				"telemetry": map[string]interface{}{
+				"telemetry": map[string]any{
 					"unauthenticated_metrics_access": true,
 				},
 			},
 		},
-		"telemetry": map[string]interface{}{
+		"telemetry": map[string]any{
 			"disable_hostname": true,
 		},
-		"storage": map[string]interface{}{
-			"inmem": map[string]interface{}{},
+		"storage": map[string]any{
+			"inmem": map[string]any{},
 		},
 		"cluster_name":     netName,
 		"log_level":        "TRACE",
@@ -571,8 +607,8 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 		"disable_mlock":    true,
 	}
 	if n.Cluster.RaftStorage {
-		vaultCfg["storage"] = map[string]interface{}{
-			"raft": map[string]interface{}{
+		vaultCfg["storage"] = map[string]any{
+			"raft": map[string]any{
 				"path":    "/vault/file",
 				"node_id": n.NodeID,
 			},
@@ -598,7 +634,8 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 	}
 
 	r := &Runner{
-		dockerAPI: cli,
+		dockerAPI:    cli,
+		RegistryAuth: n.Cluster.registryAuth,
 		ContainerConfig: &container.Config{
 			Image: n.Cluster.vaultImage,
 			Entrypoint: []string{"/bin/sh", "-c",
@@ -760,6 +797,7 @@ func (dc *Cluster) setupDockerCluster(opts *ClusterOptions) error {
 	if err != nil {
 		return err
 	}
+	defer cli.Close()
 
 	netUUID, err := uuid.GenerateUUID()
 	if err != nil {
@@ -785,7 +823,10 @@ func (dc *Cluster) setupDockerCluster(opts *ClusterOptions) error {
 	}
 
 	if opts == nil || !opts.SkipInit {
-		if err := dc.Initialize(context.Background()); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		if err := dc.Initialize(ctx); err != nil {
 			return err
 		}
 	}
@@ -830,11 +871,11 @@ func (dc *Cluster) Setup() error {
 		return err
 	}
 
-	// tmpDir gets cleaned up when the cluster is cleaned up
 	tmpDir, err := os.MkdirTemp("", "vault-bin-")
 	if err != nil {
 		return err
 	}
+	defer os.RemoveAll(tmpDir)
 
 	binName, binPath, sha256value, err := stepwise.CompilePlugin(registryName, pluginName, srcDir, tmpDir)
 	if err != nil {

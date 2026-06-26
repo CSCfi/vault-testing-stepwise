@@ -32,7 +32,6 @@ const (
 	ReadOperation   Operation = "read"
 	DeleteOperation Operation = "delete"
 	ListOperation   Operation = "list"
-	HelpOperation   Operation = "help"
 )
 
 // Environment is the interface Environments need to implement to be used in
@@ -116,10 +115,10 @@ type Step struct {
 
 	// Arguments to pass in the request. These arguments represent payloads sent
 	// to the API.
-	Data map[string]interface{}
+	Data map[string]any
 
 	// Alternatively get data from a function
-	GetData func() (map[string]interface{}, error)
+	GetData func() (map[string]any, error)
 
 	// BodyData is the data to pass to a read or delete request
 	BodyData map[string][]string
@@ -188,10 +187,6 @@ func Run(tt TestT, c Case) {
 
 	logger := logging.NewVaultLogger(log.Trace)
 
-	if err := c.Environment.Setup(); err != nil {
-		tt.Fatal(err)
-	}
-
 	defer func() {
 		if c.SkipTeardown {
 			logger.Info("driver Teardown skipped")
@@ -201,6 +196,10 @@ func Run(tt TestT, c Case) {
 			logger.Error("error in driver teardown:", "error", err)
 		}
 	}()
+
+	if err := c.Environment.Setup(); err != nil {
+		tt.Fatal(err)
+	}
 
 	// retrieve the root client from the Environment. If this returns an error,
 	// fail immediately
@@ -342,8 +341,8 @@ func checkShouldRun(tt TestT) {
 //
 // Users should just use a *testing.T object, which implements this.
 type TestT interface {
-	Error(args ...interface{})
-	Fatal(args ...interface{})
-	Skip(args ...interface{})
+	Error(args ...any)
+	Fatal(args ...any)
+	Skip(args ...any)
 	Helper()
 }

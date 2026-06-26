@@ -23,7 +23,7 @@ func TestPlugin(t *testing.T) {
 	if err != nil {
 		t.Error("Failed to set environment variable VAULT_ACC")
 	}
-	
+
 	// The mount options are also used for locating and building the plugin
 	mountOptions := stepwise.MountOptions{
 		MountPathPrefix: "plugin-mount-prefix",
@@ -38,25 +38,25 @@ func TestPlugin(t *testing.T) {
 			stepwise.Step{
 				Name:      "testThatPathWrites",
 				Operation: stepwise.WriteOperation,
-				Data:      map[string]interface{}{"field": "value"},
-				// Instead of passing static data, it's possible to use GetData with a function that returns the data    
+				Data:      map[string]any{"field": "value"},
+				// Instead of passing static data, it's possible to use GetData with a function that returns the data
 				Path:      "/path/here",
 			},
 			stepwise.Step{
-                Name:      "testThatPathReturnsX",
-                Operation: stepwise.ReadOperation,
-                Path:      "/path/here",
-				// There's support for ReadOperation with data by passing ReadData 
-                Assert: func (resp *api.Secret, err error) error {
-                
-                    // resp.Data contains the `data` part of the response from Vault
-                    
-                    return nil
-                },
-            },
+				Name:      "testThatPathReturnsX",
+				Operation: stepwise.ReadOperation,
+				Path:      "/path/here",
+				// There's support for ReadOperation with data by passing ReadData
+				Assert: func (resp *api.Secret, err error) error {
+
+					// resp.Data contains the `data` part of the response from Vault
+
+					return nil
+				},
+			},
 		},
 	}
-	
+
     // Running the case compiles the plugin with Docker, and runs Vault with the plugin enabled.
     // Each step in a case is run sequentially.
     // At the end of the case, the Docker container and network are removed, unless `SkipTeardown` is set to `true`

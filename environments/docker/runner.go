@@ -4,10 +4,12 @@
 package docker
 
 import (
+	"archive/tar"
 	"context"
 	"fmt"
 	"io"
 	"net/netip"
+	"strings"
 
 	"github.com/moby/go-archive"
 	"github.com/moby/moby/api/types/container"
@@ -23,6 +25,9 @@ type Runner struct {
 	NetName         string
 	IP              string
 	CopyFromTo      map[string]string
+	// RegistryAuth is the base64-encoded JSON credentials for a private image registry.
+	// Use Cluster.SetRegistryAuth to populate this field.
+	RegistryAuth string
 }
 
 // Start is responsible for executing the Vault container. It consists of
@@ -61,16 +66,8 @@ func (d *Runner) Start(ctx context.Context) (*container.InspectResponse, error) 
 		}
 	}
 
-	// Best-effort pull. ImageCreate here will use a matching image from the local
-	// Docker library, or if not found pull the matching image from docker hub. If
-	// not found on docker hub, returns an error. The response must be read in
-	// order for the local image to be used.
-	resp, err := d.dockerAPI.ImagePull(ctx, d.ContainerConfig.Image, docker.ImagePullOptions{})
-	if err != nil {
+	if err := d.ensureImage(ctx, d.ContainerConfig.Image); err != nil {
 		return nil, err
-	}
-	if resp != nil {
-		_, _ = io.ReadAll(resp)
 	}
 
 	cfg := *d.ContainerConfig
@@ -110,6 +107,46 @@ func (d *Runner) Start(ctx context.Context) (*container.InspectResponse, error) 
 	return &inspect.Container, nil
 }
 
+// ensureImage pulls the image if needed. For mutable tags (latest or no tag)
+// it always pulls so the local cache stays current. For immutable version tags
+// it skips the pull when the image is already present locally.
+func (d *Runner) ensureImage(ctx context.Context, image string) error {
+	if !isLatestTag(image) {
+		if _, err := d.dockerAPI.ImageInspect(ctx, image); err == nil {
+			return nil
+		}
+	}
+
+	resp, err := d.dockerAPI.ImagePull(ctx, image, docker.ImagePullOptions{RegistryAuth: d.RegistryAuth})
+	if err != nil {
+		return fmt.Errorf("failed to pull image %q: %w", image, err)
+	}
+	if resp != nil {
+		_, _ = io.ReadAll(resp)
+		resp.Close()
+	}
+
+	return nil
+}
+
+// isLatestTag reports whether an image reference uses a mutable tag (no tag or
+// "latest"). Registry:port prefixes such as "registry:5000/image" are handled
+// correctly: the colon in "registry:5000" is followed by a slash, so it is not
+// mistaken for a tag separator.
+func isLatestTag(image string) bool {
+	i := strings.LastIndex(image, ":")
+	if i == -1 {
+		return true
+	}
+
+	tag := image[i+1:]
+	if strings.ContainsRune(tag, '/') {
+		return true // colon was part of registry:port, not a tag separator
+	}
+
+	return tag == "" || tag == "latest"
+}
+
 func copyToContainer(ctx context.Context, d *docker.Client, containerID, from, to string) error {
 	srcInfo, err := archive.CopyInfoSourcePath(from, false)
 	if err != nil {
@@ -130,10 +167,57 @@ func copyToContainer(ctx context.Context, d *docker.Client, containerID, from, t
 	}
 	defer content.Close()
 
-	_, err = d.CopyToContainer(ctx, containerID, docker.CopyToContainerOptions{Content: content, DestinationPath: dstDir})
+	normalizedContent := normalizePerms(content)
+	defer normalizedContent.Close()
+
+	_, err = d.CopyToContainer(ctx, containerID, docker.CopyToContainerOptions{Content: normalizedContent, DestinationPath: dstDir})
 	if err != nil {
 		return fmt.Errorf("error copying from %q -> %q: %v", from, to, err)
 	}
 
 	return nil
+}
+
+// normalizePerms rewrites tar headers so that files are 0644 and directories
+// are 0755 inside the container, regardless of the host filesystem permissions.
+// moby preserves host modes verbatim, which breaks containers that
+// run as a non-root user when the source was created with restrictive modes
+// such as 0600 or 0700.
+func normalizePerms(r io.ReadCloser) io.ReadCloser {
+	pr, pw := io.Pipe()
+	go func() {
+		tr := tar.NewReader(r)
+		tw := tar.NewWriter(pw)
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				_ = tw.Close()
+				pw.Close()
+
+				return
+			}
+			if err != nil {
+				pw.CloseWithError(err)
+
+				return
+			}
+			if hdr.Typeflag == tar.TypeDir || hdr.Mode&0o111 != 0 {
+				hdr.Mode = 0o755
+			} else {
+				hdr.Mode = 0o644
+			}
+			if err := tw.WriteHeader(hdr); err != nil {
+				pw.CloseWithError(err)
+
+				return
+			}
+			if _, err := io.Copy(tw, tr); err != nil {
+				pw.CloseWithError(err)
+
+				return
+			}
+		}
+	}()
+
+	return pr
 }
