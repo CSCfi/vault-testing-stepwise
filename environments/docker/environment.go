@@ -21,6 +21,7 @@ import (
 	mathrand "math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -46,6 +47,12 @@ var port8201 = network.MustParsePort("8201/tcp")
 
 const dockerVersion = "1.54"
 const defaultImage = "hashicorp/vault:latest"
+
+// DockerHostEnvVar can be set to explicitly override the host used to reach
+// ports published by the Vault containers (see apiHost). This is an escape
+// hatch for network topologies apiHost can't infer on its own, e.g. a Docker
+// daemon reached over a bind-mounted socket rather than DOCKER_HOST.
+const DockerHostEnvVar = "VAULT_TEST_DOCKER_HOST"
 
 // Cluster is used for managing the lifecycle of the test Vault cluster
 type Cluster struct {
@@ -532,6 +539,37 @@ type dockerClusterNode struct {
 	dockerAPI         *docker.Client
 }
 
+// apiHost returns the hostname the test process should use to reach ports
+// published on this node's container.
+//
+// This is not always the same host the test process itself is running on.
+// When the Docker daemon is reached over TCP (DOCKER_HOST=tcp://...) - e.g. a
+// dind daemon in CI, which runs in a different container than this process -
+// published ports are bound on that daemon's host, not on this process's own
+// loopback interface. When the daemon is reached via a local unix socket, it
+// runs on this same host, so 127.0.0.1 is correct.
+//
+// DockerHostEnvVar overrides this detection entirely, for topologies it
+// can't infer (e.g. a docker socket bind-mounted from another host).
+func (n *dockerClusterNode) apiHost() string {
+	if host := os.Getenv(DockerHostEnvVar); host != "" {
+		return host
+	}
+
+	if n.dockerAPI != nil {
+		if u, err := url.Parse(n.dockerAPI.DaemonHost()); err == nil {
+			switch u.Scheme {
+			case "tcp", "http", "https":
+				if u.Hostname() != "" {
+					return u.Hostname()
+				}
+			}
+		}
+	}
+
+	return "127.0.0.1"
+}
+
 // NewAPIClient creates and configures a Vault API client to communicate with
 // the running Vault Cluster for this DockerClusterNode
 func (n *dockerClusterNode) NewAPIClient() (*api.Client, error) {
@@ -551,7 +589,7 @@ func (n *dockerClusterNode) NewAPIClient() (*api.Client, error) {
 	if config.Error != nil {
 		return nil, config.Error
 	}
-	config.Address = fmt.Sprintf("https://127.0.0.1:%s", n.HostPort)
+	config.Address = fmt.Sprintf("https://%s:%s", n.apiHost(), n.HostPort)
 	config.HttpClient = client
 	config.MaxRetries = 0
 	apiClient, err := api.NewClient(config)
