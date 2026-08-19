@@ -21,6 +21,7 @@ import (
 	mathrand "math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -46,6 +47,12 @@ var port8201 = network.MustParsePort("8201/tcp")
 
 const dockerVersion = "1.54"
 const defaultImage = "hashicorp/vault:latest"
+
+// DockerHostEnvVar can be set to explicitly override the host used to reach
+// ports published by the Vault containers (see apiHost). This is an escape
+// hatch for network topologies apiHost can't infer on its own, e.g. a Docker
+// daemon reached over a bind-mounted socket rather than DOCKER_HOST.
+const DockerHostEnvVar = "VAULT_TEST_DOCKER_HOST"
 
 // Cluster is used for managing the lifecycle of the test Vault cluster
 type Cluster struct {
@@ -395,13 +402,26 @@ func (n *dockerClusterNode) setupCert() error {
 		return fmt.Errorf("failed to generate server key: %w", err)
 	}
 
+	// The cert must also be valid for whatever host the test process uses to
+	// reach this node's published port (see apiHost) - under dind that's the
+	// daemon's hostname (e.g. "docker"), not localhost/127.0.0.1.
+	dnsNames := []string{"localhost", n.Name()}
+	ipAddresses := []net.IP{net.IPv6loopback, net.ParseIP("127.0.0.1")}
+	if apiHost := n.apiHost(); apiHost != "" {
+		if ip := net.ParseIP(apiHost); ip != nil {
+			ipAddresses = append(ipAddresses, ip)
+		} else {
+			dnsNames = append(dnsNames, apiHost)
+		}
+	}
+
 	serialNumber := mathrand.New(mathrand.NewSource(time.Now().UnixNano())).Int63()
 	certTemplate := &x509.Certificate{
 		Subject: pkix.Name{
 			CommonName: n.Name(),
 		},
-		DNSNames:    []string{"localhost", n.Name()},
-		IPAddresses: []net.IP{net.IPv6loopback, net.ParseIP("127.0.0.1")},
+		DNSNames:    dnsNames,
+		IPAddresses: ipAddresses,
 		ExtKeyUsage: []x509.ExtKeyUsage{
 			x509.ExtKeyUsageServerAuth,
 			x509.ExtKeyUsageClientAuth,
@@ -532,6 +552,37 @@ type dockerClusterNode struct {
 	dockerAPI         *docker.Client
 }
 
+// apiHost returns the hostname the test process should use to reach ports
+// published on this node's container.
+//
+// This is not always the same host the test process itself is running on.
+// When the Docker daemon is reached over TCP (DOCKER_HOST=tcp://...) - e.g. a
+// dind daemon in CI, which runs in a different container than this process -
+// published ports are bound on that daemon's host, not on this process's own
+// loopback interface. When the daemon is reached via a local unix socket, it
+// runs on this same host, so 127.0.0.1 is correct.
+//
+// DockerHostEnvVar overrides this detection entirely, for topologies it
+// can't infer (e.g. a docker socket bind-mounted from another host).
+func (n *dockerClusterNode) apiHost() string {
+	if host := os.Getenv(DockerHostEnvVar); host != "" {
+		return host
+	}
+
+	if n.dockerAPI != nil {
+		if u, err := url.Parse(n.dockerAPI.DaemonHost()); err == nil {
+			switch u.Scheme {
+			case "tcp", "http", "https":
+				if u.Hostname() != "" {
+					return u.Hostname()
+				}
+			}
+		}
+	}
+
+	return "127.0.0.1"
+}
+
 // NewAPIClient creates and configures a Vault API client to communicate with
 // the running Vault Cluster for this DockerClusterNode
 func (n *dockerClusterNode) NewAPIClient() (*api.Client, error) {
@@ -551,7 +602,7 @@ func (n *dockerClusterNode) NewAPIClient() (*api.Client, error) {
 	if config.Error != nil {
 		return nil, config.Error
 	}
-	config.Address = fmt.Sprintf("https://127.0.0.1:%s", n.HostPort)
+	config.Address = fmt.Sprintf("https://%s:%s", n.apiHost(), n.HostPort)
 	config.HttpClient = client
 	config.MaxRetries = 0
 	apiClient, err := api.NewClient(config)
