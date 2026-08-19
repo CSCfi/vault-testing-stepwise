@@ -402,13 +402,26 @@ func (n *dockerClusterNode) setupCert() error {
 		return fmt.Errorf("failed to generate server key: %w", err)
 	}
 
+	// The cert must also be valid for whatever host the test process uses to
+	// reach this node's published port (see apiHost) - under dind that's the
+	// daemon's hostname (e.g. "docker"), not localhost/127.0.0.1.
+	dnsNames := []string{"localhost", n.Name()}
+	ipAddresses := []net.IP{net.IPv6loopback, net.ParseIP("127.0.0.1")}
+	if apiHost := n.apiHost(); apiHost != "" {
+		if ip := net.ParseIP(apiHost); ip != nil {
+			ipAddresses = append(ipAddresses, ip)
+		} else {
+			dnsNames = append(dnsNames, apiHost)
+		}
+	}
+
 	serialNumber := mathrand.New(mathrand.NewSource(time.Now().UnixNano())).Int63()
 	certTemplate := &x509.Certificate{
 		Subject: pkix.Name{
 			CommonName: n.Name(),
 		},
-		DNSNames:    []string{"localhost", n.Name()},
-		IPAddresses: []net.IP{net.IPv6loopback, net.ParseIP("127.0.0.1")},
+		DNSNames:    dnsNames,
+		IPAddresses: ipAddresses,
 		ExtKeyUsage: []x509.ExtKeyUsage{
 			x509.ExtKeyUsageServerAuth,
 			x509.ExtKeyUsageClientAuth,

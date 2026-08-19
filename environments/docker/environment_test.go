@@ -4,6 +4,9 @@
 package docker
 
 import (
+	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 
 	docker "github.com/moby/moby/client"
@@ -73,5 +76,42 @@ func TestDockerClusterNode_apiHost(t *testing.T) {
 				t.Errorf("apiHost() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestDockerClusterNode_setupCert_includesAPIHost guards against the cert
+// only covering localhost/the node's own container name: the test process
+// connects using apiHost() (e.g. the dind daemon's hostname), so the server
+// cert must also be valid for that host or TLS verification fails.
+func TestDockerClusterNode_setupCert_includesAPIHost(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmpDir, "ca"), 0o755); err != nil {
+		t.Fatalf("failed to create ca dir: %v", err)
+	}
+
+	dc := &Cluster{tmpDir: tmpDir}
+	if err := dc.setupCA(nil); err != nil {
+		t.Fatalf("setupCA() error = %v", err)
+	}
+
+	cli, err := docker.New(docker.WithHost("tcp://docker:2375"))
+	if err != nil {
+		t.Fatalf("failed to create docker client: %v", err)
+	}
+	t.Cleanup(func() { cli.Close() })
+
+	n := &dockerClusterNode{
+		NodeID:    "vault-0",
+		Cluster:   dc,
+		WorkDir:   t.TempDir(),
+		dockerAPI: cli,
+	}
+
+	if err := n.setupCert(); err != nil {
+		t.Fatalf("setupCert() error = %v", err)
+	}
+
+	if !slices.Contains(n.ServerCert.DNSNames, "docker") {
+		t.Errorf("ServerCert.DNSNames = %v, want it to contain %q", n.ServerCert.DNSNames, "docker")
 	}
 }
