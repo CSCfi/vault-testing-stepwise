@@ -18,7 +18,7 @@ import (
 )
 
 const pluginPrefix = "vault-plugin-"
-const golangImage = "golang:1.25-alpine" // Must be Alpine linux for compatibility with the vault image
+const golangImage = "golang:1.26-alpine" // Must be Alpine linux for compatibility with the vault image
 
 // CompilePlugin is a helper method to compile a source plugin
 func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, string, error) {
@@ -60,14 +60,14 @@ func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, str
 	// calculate sha256
 	f, err := os.Open(binPath)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", fmt.Errorf("failed to open compiled plugin binary %s: %w", binPath, err)
 	}
 
 	defer f.Close()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
-		return "", "", "", err
+		return "", "", "", fmt.Errorf("failed to hash compiled plugin binary %s: %w", binPath, err)
 	}
 
 	sha256value := fmt.Sprintf("%x", h.Sum(nil))
@@ -116,16 +116,16 @@ func NewCertificateGetter(certFile, keyFile string) *CertificateGetter {
 func (cg *CertificateGetter) Reload() error {
 	certPEMBlock, err := os.ReadFile(cg.certFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read certificate file %s: %w", cg.certFile, err)
 	}
 	keyPEMBlock, err := os.ReadFile(cg.keyFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read key file %s: %w", cg.keyFile, err)
 	}
 
 	cert, err := tls.X509KeyPair(certPEMBlock, keyPEMBlock)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load TLS key pair: %w", err)
 	}
 
 	cg.Lock()

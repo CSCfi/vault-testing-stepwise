@@ -190,6 +190,7 @@ func Run(tt TestT, c Case) {
 	defer func() {
 		if c.SkipTeardown {
 			logger.Info("driver Teardown skipped")
+
 			return
 		}
 		if err := c.Environment.Teardown(); err != nil {
@@ -198,14 +199,14 @@ func Run(tt TestT, c Case) {
 	}()
 
 	if err := c.Environment.Setup(); err != nil {
-		tt.Fatal(err)
+		tt.Fatalf("Failed to setup environment: %v", err)
 	}
 
 	// retrieve the root client from the Environment. If this returns an error,
 	// fail immediately
 	rootClient, err := c.Environment.Client()
 	if err != nil {
-		tt.Fatal(err)
+		tt.Fatalf("Failed to retrieve client: %v", err)
 	}
 
 	// Trap the rootToken so that we can preform revocation or other tasks in the
@@ -228,8 +229,9 @@ func Run(tt TestT, c Case) {
 			}
 
 			if err := rootClient.Sys().Revoke(secret.LeaseID); err != nil {
-				tt.Error(fmt.Errorf("error revoking lease: %w", err))
+				tt.Errorf("error revoking lease: %v", err)
 				failedRevokes = append(failedRevokes, secret)
+
 				continue
 			}
 		}
@@ -237,10 +239,8 @@ func Run(tt TestT, c Case) {
 		// If we have any failed revokes, log it.
 		if len(failedRevokes) > 0 {
 			for _, s := range failedRevokes {
-				tt.Error(fmt.Sprintf(
-					"WARNING: Revoking the following secret failed. It may\n"+
-						"still exist. Please verify:\n\n%#v",
-					s))
+				tt.Errorf("WARNING: Revoking the following secret failed. It may\n"+
+					"still exist. Please verify:\n\n%#v", s)
 			}
 		}
 	}()
@@ -256,7 +256,7 @@ func Run(tt TestT, c Case) {
 		// reset token in case it was cleared
 		client, err := rootClient.Clone()
 		if err != nil {
-			tt.Fatal(err)
+			tt.Fatalf("Failed to clone client: %v", err)
 		}
 
 		client.SetToken(rootToken)
@@ -270,7 +270,7 @@ func Run(tt TestT, c Case) {
 		// sent to the Assert function to validate.
 		if step.Assert != nil {
 			if err := step.Assert(resp, respErr); err != nil {
-				tt.Error(fmt.Errorf("failed step %d: %w", i+1, err))
+				tt.Errorf("failed step %d: %v", i+1, err)
 			}
 		}
 	}
@@ -280,7 +280,7 @@ func makeRequest(tt TestT, env Environment, step Step) (*api.Secret, error) {
 	tt.Helper()
 	client, err := env.Client()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to retrieve client: %w", err)
 	}
 
 	if step.Unauthenticated {
@@ -299,7 +299,7 @@ func makeRequest(tt TestT, env Environment, step Step) (*api.Secret, error) {
 	if step.GetData != nil {
 		data, err = step.GetData()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get step data: %w", err)
 		}
 	}
 	switch step.Operation {
@@ -325,9 +325,9 @@ func makeRequest(tt TestT, env Environment, step Step) (*api.Secret, error) {
 func checkShouldRun(tt TestT) {
 	tt.Helper()
 	if os.Getenv(TestEnvVar) == "" {
-		tt.Skip(fmt.Sprintf(
-			"Acceptance tests skipped unless env '%s' set",
-			TestEnvVar))
+		tt.Skipf("Acceptance tests skipped unless env '%s' set",
+			TestEnvVar)
+
 		return
 	}
 
@@ -342,7 +342,10 @@ func checkShouldRun(tt TestT) {
 // Users should just use a *testing.T object, which implements this.
 type TestT interface {
 	Error(args ...any)
+	Errorf(format string, args ...any)
 	Fatal(args ...any)
+	Fatalf(format string, args ...any)
 	Skip(args ...any)
+	Skipf(format string, args ...any)
 	Helper()
 }
