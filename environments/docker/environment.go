@@ -30,7 +30,6 @@ import (
 
 	stepwise "github.com/CSCfi/vault-testing-stepwise"
 	"github.com/hashicorp/go-cleanhttp"
-	"github.com/hashicorp/go-multierror"
 	uuid "github.com/hashicorp/go-uuid"
 	"github.com/hashicorp/vault/api"
 	"github.com/moby/moby/api/types/container"
@@ -45,7 +44,7 @@ var _ stepwise.Environment = (*Cluster)(nil)
 var port8200 = network.MustParsePort("8200/tcp")
 var port8201 = network.MustParsePort("8201/tcp")
 
-const dockerVersion = "1.51"
+const dockerVersion = "1.54"
 const defaultImage = "hashicorp/vault:latest"
 
 // Cluster is used for managing the lifecycle of the test Vault cluster
@@ -94,10 +93,10 @@ type Cluster struct {
 
 // Teardown stops all the containers.
 func (dc *Cluster) Teardown() error {
-	var result *multierror.Error
+	var result error
 	for _, node := range dc.ClusterNodes {
 		if err := node.Cleanup(); err != nil {
-			result = multierror.Append(result, err)
+			result = errors.Join(result, err)
 		}
 	}
 
@@ -105,21 +104,21 @@ func (dc *Cluster) Teardown() error {
 	if dc.networkID != "" {
 		cli, err := docker.New(docker.FromEnv, docker.WithAPIVersion(dockerVersion))
 		if err != nil {
-			return multierror.Append(result, err)
+			return errors.Join(result, err)
 		}
 		defer cli.Close()
 		if _, err := cli.NetworkRemove(context.Background(), dc.networkID, docker.NetworkRemoveOptions{}); err != nil {
-			return multierror.Append(result, err)
+			return errors.Join(result, err)
 		}
 	}
 
 	if dc.tmpDir != "" {
 		if err := os.RemoveAll(dc.tmpDir); err != nil {
-			result = multierror.Append(result, err)
+			result = errors.Join(result, err)
 		}
 	}
 
-	return result.ErrorOrNil()
+	return result
 }
 
 // MountPath returns the path that the plugin under test is mounted at. If a
@@ -132,7 +131,7 @@ func (dc *Cluster) MountPath() string {
 
 	uuidStr, err := uuid.GenerateUUID()
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("MountPath: failed to generate UUID: %w", err))
 	}
 
 	prefix := dc.PluginName
@@ -167,6 +166,7 @@ func (dc *Cluster) Client() (*api.Client, error) {
 				return nil, err
 			}
 			c.SetToken(dc.ClusterNodes[0].Client.Token())
+
 			return c, nil
 		}
 	}
@@ -181,7 +181,7 @@ func (n *dockerClusterNode) Name() string {
 func (dc *Cluster) Initialize(ctx context.Context) error {
 	client, err := dc.ClusterNodes[0].NewAPIClient()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create API client for node 0: %w", err)
 	}
 	defer client.CloneConfig().HttpClient.CloseIdleConnections()
 
@@ -197,7 +197,7 @@ func (dc *Cluster) Initialize(ctx context.Context) error {
 		time.Sleep(500 * time.Millisecond)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("init request failed: %w", err)
 	}
 	if resp == nil {
 		return fmt.Errorf("nil response to init request")
@@ -206,7 +206,7 @@ func (dc *Cluster) Initialize(ctx context.Context) error {
 	for _, k := range resp.Keys {
 		raw, err := hex.DecodeString(k)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to decode barrier key: %w", err)
 		}
 		dc.barrierKeys = append(dc.barrierKeys, raw)
 	}
@@ -214,7 +214,7 @@ func (dc *Cluster) Initialize(ctx context.Context) error {
 	for _, k := range resp.RecoveryKeys {
 		raw, err := hex.DecodeString(k)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to decode recovery key: %w", err)
 		}
 		dc.recoveryKeys = append(dc.recoveryKeys, raw)
 	}
@@ -230,7 +230,7 @@ func (dc *Cluster) Initialize(ctx context.Context) error {
 		i := j
 		client, err := node.NewAPIClient()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create API client for node %d: %w", i, err)
 		}
 		node.Client = client
 
@@ -243,7 +243,7 @@ func (dc *Cluster) Initialize(ctx context.Context) error {
 				LeaderClientKey:  string(node.ServerKeyPEM),
 			})
 			if err != nil {
-				return err
+				return fmt.Errorf("raft join failed for node %d: %w", i, err)
 			}
 			if resp == nil || !resp.Joined {
 				return fmt.Errorf("nil or negative response from raft join request: %v", resp)
@@ -254,7 +254,7 @@ func (dc *Cluster) Initialize(ctx context.Context) error {
 		for _, key := range dc.barrierKeys {
 			resp, err := client.Sys().Unseal(hex.EncodeToString(key))
 			if err != nil {
-				return err
+				return fmt.Errorf("unseal request failed for node %d: %w", i, err)
 			}
 			unsealed = !resp.Sealed
 		}
@@ -275,7 +275,7 @@ func (dc *Cluster) Initialize(ctx context.Context) error {
 			return nil
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("health check failed for node %d: %w", i, err)
 		}
 
 		if dc.RaftStorage && i == 0 {
@@ -287,7 +287,7 @@ func (dc *Cluster) Initialize(ctx context.Context) error {
 				return nil
 			})
 			if err != nil {
-				return err
+				return fmt.Errorf("leader check failed for node %d: %w", i, err)
 			}
 		}
 	}
@@ -301,7 +301,7 @@ func (dc *Cluster) Initialize(ctx context.Context) error {
 				return nil
 			})
 			if err != nil {
-				return err
+				return fmt.Errorf("post-init leader check failed for node %d: %w", i, err)
 			}
 		}
 	}
@@ -323,7 +323,7 @@ func (dc *Cluster) setupCA(opts *ClusterOptions) error {
 	} else {
 		caKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to generate CA key: %w", err)
 		}
 	}
 	dc.CAKey = caKey
@@ -348,12 +348,12 @@ func (dc *Cluster) setupCA(opts *ClusterOptions) error {
 		}
 		caBytes, err = x509.CreateCertificate(rand.Reader, CACertTemplate, CACertTemplate, caKey.Public(), caKey)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create CA certificate: %w", err)
 		}
 	}
 	CACert, err := x509.ParseCertificate(caBytes)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse CA certificate: %w", err)
 	}
 	dc.CACert = CACert
 	dc.CACertBytes = caBytes
@@ -370,12 +370,12 @@ func (dc *Cluster) setupCA(opts *ClusterOptions) error {
 	dc.CACertPEMFile = filepath.Join(dc.tmpDir, "ca", "ca.pem")
 	err = os.WriteFile(dc.CACertPEMFile, dc.CACertPEM, 0o644)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to write CA certificate to %s: %w", dc.CACertPEMFile, err)
 	}
 
 	marshaledCAKey, err := x509.MarshalECPrivateKey(caKey)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal CA key: %w", err)
 	}
 	CAKeyPEMBlock := &pem.Block{
 		Type:  "EC PRIVATE KEY",
@@ -392,7 +392,7 @@ func (n *dockerClusterNode) setupCert() error {
 
 	n.ServerKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to generate server key: %w", err)
 	}
 
 	serialNumber := mathrand.New(mathrand.NewSource(time.Now().UnixNano())).Int63()
@@ -413,11 +413,11 @@ func (n *dockerClusterNode) setupCert() error {
 	}
 	n.ServerCertBytes, err = x509.CreateCertificate(rand.Reader, certTemplate, n.Cluster.CACert, n.ServerKey.Public(), n.Cluster.CAKey)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create server certificate: %w", err)
 	}
 	n.ServerCert, err = x509.ParseCertificate(n.ServerCertBytes)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse server certificate: %w", err)
 	}
 	n.ServerCertPEM = pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
@@ -426,7 +426,7 @@ func (n *dockerClusterNode) setupCert() error {
 
 	marshaledKey, err := x509.MarshalECPrivateKey(n.ServerKey)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal server key: %w", err)
 	}
 	n.ServerKeyPEM = pem.EncodeToMemory(&pem.Block{
 		Type:  "EC PRIVATE KEY",
@@ -436,23 +436,23 @@ func (n *dockerClusterNode) setupCert() error {
 	n.ServerCertPEMFile = filepath.Join(n.WorkDir, "cert.pem")
 	err = os.WriteFile(n.ServerCertPEMFile, n.ServerCertPEM, 0o644)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to write server certificate to %s: %w", n.ServerCertPEMFile, err)
 	}
 
 	n.ServerKeyPEMFile = filepath.Join(n.WorkDir, "key.pem")
 	err = os.WriteFile(n.ServerKeyPEMFile, n.ServerKeyPEM, 0o644)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to write server key to %s: %w", n.ServerKeyPEMFile, err)
 	}
 
 	tlsCert, err := tls.X509KeyPair(n.ServerCertPEM, n.ServerKeyPEM)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load server TLS key pair: %w", err)
 	}
 
 	certGetter := stepwise.NewCertificateGetter(n.ServerCertPEMFile, n.ServerKeyPEMFile)
 	if err := certGetter.Reload(); err != nil {
-		return err
+		return fmt.Errorf("failed to reload certificate getter: %w", err)
 	}
 	tlsConfig := &tls.Config{
 		Certificates:   []tls.Certificate{tlsCert},
@@ -483,7 +483,7 @@ func NewEnvironment(name string, options *stepwise.MountOptions, vaultImage stri
 
 	clusterUUID, err := uuid.GenerateUUID()
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("NewEnvironment: failed to generate UUID: %w", err))
 	}
 
 	return &Cluster{
@@ -559,6 +559,7 @@ func (n *dockerClusterNode) NewAPIClient() (*api.Client, error) {
 		return nil, err
 	}
 	apiClient.SetToken(n.Cluster.RootToken())
+
 	return apiClient, nil
 }
 
@@ -581,7 +582,7 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 
 	err := n.setupCert()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to setup cert: %w", err)
 	}
 
 	vaultCfg := map[string]any{
@@ -616,12 +617,13 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 	}
 	cfgJSON, err := json.Marshal(vaultCfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal vault config: %w", err)
 	}
 
-	err = os.WriteFile(filepath.Join(n.WorkDir, "local.json"), cfgJSON, 0o644)
+	cfgFile := filepath.Join(n.WorkDir, "local.json")
+	err = os.WriteFile(cfgFile, cfgJSON, 0o644)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to write vault config to %s: %w", cfgFile, err)
 	}
 	// setup plugin bin copy if needed
 	copyFromTo := map[string]string{
@@ -657,7 +659,7 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 
 	n.container, err = r.Start(context.Background())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to start container: %w", err)
 	}
 
 	ipAddr := n.container.NetworkSettings.Networks[netName].IPAddress
@@ -670,7 +672,7 @@ func (n *dockerClusterNode) start(cli *docker.Client, caDir, netName string, net
 	if len(ports) == 0 {
 		err := n.Cleanup()
 		if err != nil {
-			return err
+			return fmt.Errorf("cleanup after missing port binding failed: %w", err)
 		}
 
 		return fmt.Errorf("could not find port binding for 8200/tcp")
@@ -790,18 +792,18 @@ func (dc *Cluster) setupDockerCluster(opts *ClusterOptions) error {
 
 	err := dc.setupCA(opts)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to setup CA: %w", err)
 	}
 
 	cli, err := docker.New(docker.FromEnv, docker.WithAPIVersion(dockerVersion))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to setup new Docker API client: %w", err)
 	}
 	defer cli.Close()
 
 	netUUID, err := uuid.GenerateUUID()
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("failed to generate UUID: %w", err)
 	}
 	netName := fmt.Sprintf("%s-%s", "vault-test", netUUID)
 	netID, err := setupNetwork(cli, netName)
@@ -810,7 +812,7 @@ func (dc *Cluster) setupDockerCluster(opts *ClusterOptions) error {
 	}
 	dc.networkID = netID
 
-	for _, node := range dc.ClusterNodes {
+	for i, node := range dc.ClusterNodes {
 		pluginBinPath := ""
 		if opts != nil {
 			pluginBinPath = opts.PluginTestBin
@@ -818,7 +820,7 @@ func (dc *Cluster) setupDockerCluster(opts *ClusterOptions) error {
 
 		err := node.start(cli, caDir, netName, node, pluginBinPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to start cluster node %d: %w", i, err)
 		}
 	}
 
@@ -827,7 +829,7 @@ func (dc *Cluster) setupDockerCluster(opts *ClusterOptions) error {
 		defer cancel()
 
 		if err := dc.Initialize(ctx); err != nil {
-			return err
+			return fmt.Errorf("initialization failed: %w", err)
 		}
 	}
 
@@ -841,6 +843,7 @@ func setupNetwork(cli *docker.Client, netName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("couldn't create network %s: %w", netName, err)
 	}
+
 	return id, nil
 }
 
@@ -879,12 +882,12 @@ func (dc *Cluster) Setup() error {
 
 	binName, binPath, sha256value, err := stepwise.CompilePlugin(registryName, pluginName, srcDir, tmpDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to compile plugin: %w", err)
 	}
 
 	dOpts := &ClusterOptions{PluginTestBin: binPath}
 	if err := dc.setupDockerCluster(dOpts); err != nil {
-		return err
+		return fmt.Errorf("failed to setup docker cluster: %w", err)
 	}
 
 	cores := dc.ClusterNodes
@@ -898,7 +901,7 @@ func (dc *Cluster) Setup() error {
 		SHA256:  sha256value,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to register plugin: %w", err)
 	}
 
 	switch dc.MountOptions.PluginType {
@@ -919,5 +922,6 @@ func (dc *Cluster) Setup() error {
 	default:
 		return fmt.Errorf("unknown plugin type: %s", dc.MountOptions.PluginType.String())
 	}
+
 	return err
 }

@@ -374,12 +374,14 @@ func (m *mockEnvironment) Client() (*api.Client, error) {
 	// need to set root token here to mimic an actual root token of a cluster
 	client.SetToken(m.RootToken())
 	m.client = client
+
 	return client, nil
 }
 
 func (m *mockEnvironment) Teardown() error {
 	m.teardownCalled = true
 	m.ts.Close()
+
 	return nil
 }
 
@@ -431,15 +433,33 @@ func (t *mockT) Error(args ...any) {
 	t.f = true
 }
 
+func (t *mockT) Errorf(format string, args ...any) {
+	t.ErrorCalled = true
+	t.ErrorArgs = []any{fmt.Sprintf(format, args...)}
+	t.f = true
+}
+
 func (t *mockT) Fatal(args ...any) {
 	t.FatalCalled = true
 	t.FatalArgs = args
 	t.f = true
 }
 
+func (t *mockT) Fatalf(format string, args ...any) {
+	t.FatalCalled = true
+	t.FatalArgs = []any{fmt.Sprintf(format, args...)}
+	t.f = true
+}
+
 func (t *mockT) Skip(args ...any) {
 	t.SkipCalled = true
 	t.SkipArgs = args
+	t.f = true
+}
+
+func (t *mockT) Skipf(format string, args ...any) {
+	t.SkipCalled = true
+	t.SkipArgs = []any{fmt.Sprintf(format, args...)}
 	t.f = true
 }
 
