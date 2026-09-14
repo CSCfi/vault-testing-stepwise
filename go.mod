@@ -1,6 +1,6 @@
 module github.com/CSCfi/vault-testing-stepwise
 
-go 1.25.7
+go 1.26.0
 
 require (
 	github.com/hashicorp/go-cleanhttp v0.5.2
@@ -11,7 +11,7 @@ require (
 	github.com/moby/go-archive v0.3.3
 	github.com/moby/moby/api v1.56.0
 	github.com/moby/moby/client v0.6.0
-	golang.org/x/net v0.58.0
+	golang.org/x/net v0.59.0
 )
 
 require (
@@ -58,7 +58,7 @@ require (
 	go.opentelemetry.io/otel v1.42.0 // indirect
 	go.opentelemetry.io/otel/metric v1.42.0 // indirect
 	go.opentelemetry.io/otel/trace v1.42.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 )
