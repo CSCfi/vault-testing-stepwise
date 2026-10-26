@@ -18,7 +18,7 @@ import (
 )
 
 const pluginPrefix = "vault-plugin-"
-const golangImage = "golang:1.26-alpine" // Must be Alpine linux for compatibility with the vault image
+const defaultGolangImage = "golang:1.27-alpine" // Must be Alpine linux for compatibility with the vault image
 
 // CompilePlugin is a helper method to compile a source plugin
 func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, string, error) {
@@ -39,6 +39,10 @@ func CompilePlugin(name, pluginName, srcDir, tmpDir string) (string, string, str
 		args = append(args, "-v", modCache+":/go/pkg/mod")
 	}
 
+	golangImage := os.Getenv("GO_DOCKER_IMAGE")
+	if golangImage == "" {
+		golangImage = defaultGolangImage
+	}
 	args = append(args, golangImage,
 		"go", "build", "-v", "-o", binPath,
 		path.Join("/usr/src/myapp", pluginName, fmt.Sprintf("cmd/%s/main.go", pluginName)),
