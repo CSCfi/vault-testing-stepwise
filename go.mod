@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/vault/sdk v0.26.0
 	github.com/moby/go-archive v0.3.3
 	github.com/moby/moby/api v1.57.0
-	github.com/moby/moby/client v0.6.2
+	github.com/moby/moby/client v0.6.3
 	golang.org/x/net v0.63.0
 )
 
